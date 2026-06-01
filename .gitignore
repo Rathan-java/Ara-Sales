@@ -18,6 +18,9 @@ mobile/.flutter-plugins*
 .env.*
 !.env.example
 !.env.production.example
+# web/.env.production holds only the PUBLIC API URL (baked into the browser
+# bundle anyway, not a secret) so Vercel can build with zero config.
+!web/.env.production
 *.local
 
 # OS / editor

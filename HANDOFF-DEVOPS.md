@@ -65,6 +65,31 @@ The repo contains **only placeholders**. Set the real values as App Service
 3. **Log in and change that password immediately.** Reps/admins are managed via
    the admin API (`POST /api/admin/users`).
 
+## 4b. CORS — allow the web admin origin
+
+The web admin (Vercel) calls this API from the browser, so the API must allow its
+origin. Set the App Service setting to the deployed web URL (comma-separated for
+multiple), then restart:
+
+```
+CORS_ORIGINS = https://<your-app>.vercel.app
+```
+
+Without this, the browser blocks the web admin with a CORS error (the API itself
+still works; it's a browser policy).
+
+## 4c. Remove demo/seed accounts (one time)
+
+The seed creates demo users (`admin@ara.test`, `ravi@ara.test`, `meena@ara.test`)
+with the public default password. After real admins exist, delete them. From
+`/home/site/wwwroot`:
+
+```
+node -e "const k=require('knex')(require('./knexfile').production||require('./knexfile').development);k('users').whereIn('email',['admin@ara.test','ravi@ara.test','meena@ara.test']).del().then(n=>{console.log('deleted',n);return k.destroy()})"
+```
+
+(Or use the admin API once a real admin is logged in: `DELETE /api/admin/users/:id`.)
+
 ## 5. Verify after deploy
 
 - [ ] `GET /api/health` returns ok over HTTPS.

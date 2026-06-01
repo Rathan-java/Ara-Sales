@@ -78,6 +78,22 @@ router.put('/users/:id', validate({ params: userIdParam, body: updateUserSchema 
   res.json({ ok: true });
 }));
 
+// --- Delete a user (admin-only). Cannot delete yourself. ---
+router.delete('/users/:id', validate({ params: userIdParam }), asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  if (id === req.user.id) throw ApiError.badRequest('You cannot delete your own account');
+  const user = await db('users').where({ id }).first();
+  if (!user) throw ApiError.notFound('User not found');
+  await db('users').where({ id }).del(); // FK cascades remove their related rows
+  res.json({ ok: true, deleted: { id, email: user.email } });
+}));
+
+// --- List all users (admin-only) ---
+router.get('/users', asyncHandler(async (req, res) => {
+  const users = await db('users').select('id', 'name', 'email', 'phone', 'role', 'created_at').orderBy('id');
+  res.json({ users });
+}));
+
 // --- Overview: all reps target vs achieved, %, status, surplus, incentive ---
 router.get('/overview', validate({ query: monthSchema }), asyncHandler(async (req, res) => {
   const month = monthParam(req);
