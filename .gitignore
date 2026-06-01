@@ -1,0 +1,34 @@
+# Node
+node_modules/
+*.log
+backend/uploads/visits/
+backend/.env
+web/.env
+
+# Build output
+web/dist/
+mobile/build/
+mobile/.dart_tool/
+mobile/android/
+mobile/ios/
+mobile/.flutter-plugins*
+
+# Env / secrets (allow *.example templates to be committed)
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+test-output.txt
+
+# stray analyze logs
+mobile/_*.txt
