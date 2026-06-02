@@ -4,6 +4,14 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://ara-sales-b4becqhyf7h2drf6.eastasia-01.azurewebsites.net/api/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://ara-sales-b4becqhyf7h2drf6.eastasia-01.azurewebsites.net/uploads/:path*"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
