@@ -41,6 +41,10 @@ async function loginWithPassword(email, password) {
   }
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) throw invalid;
+  // Deactivated accounts cannot log in (web or mobile), but their data is kept.
+  if (user.active === false || user.active === 0) {
+    throw ApiError.forbidden('This account has been deactivated. Contact your administrator.');
+  }
   return user;
 }
 

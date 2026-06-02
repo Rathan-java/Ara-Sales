@@ -30,6 +30,25 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   res.json({ month, summary });
 }));
 
+// ============ Analytics for the rep's own charts (filters: month, product, leadType) ============
+const repAnalyticsSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  product: z.enum(['schoolmate', 'school_dm', 'general_dm', 'both']).optional(),
+  leadType: z.enum(['hot', 'warm', 'cold']).optional(),
+});
+router.get('/analytics', validate({ query: repAnalyticsSchema }), asyncHandler(async (req, res) => {
+  // repId is forced to the logged-in rep — they can never see others' data.
+  const data = await dashboard.analytics({
+    month: req.query.month || dashboard.currentMonth(),
+    repId: req.user.id,
+    product: req.query.product,
+    leadType: req.query.leadType,
+  });
+  // Strip the per-rep breakdown (irrelevant for a single rep) to avoid leaking names.
+  delete data.byRep;
+  res.json(data);
+}));
+
 // ============ Sales entry ============
 const saleSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),

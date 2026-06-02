@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import 'sales_entry_screen.dart';
 import 'work_screen.dart';
 import 'visit_screen.dart';
+import 'analytics_screen.dart';
 import 'login_screen.dart';
 
 /// Rep dashboard: current month split into Achieved + Pending.
@@ -52,6 +53,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text('My Dashboard'),
         actions: [
+          IconButton(
+            tooltip: 'Analytics',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnalyticsScreen())),
+            icon: const Icon(Icons.bar_chart),
+          ),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],

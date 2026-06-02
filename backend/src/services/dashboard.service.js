@@ -142,10 +142,67 @@ async function recomputeAndStoreIncentive(repId, month) {
   return row;
 }
 
+/**
+ * Analytics for charts (admin web + mobile rep). Returns totals, breakdowns
+ * (by product, lead type, per rep) and a daily trend, honouring filters.
+ *
+ * @param {object} f
+ * @param {string} f.month        YYYY-MM
+ * @param {number} [f.repId]      restrict to one rep (rep dashboard always sets this)
+ * @param {string} [f.product]
+ * @param {string} [f.leadType]
+ */
+async function analytics(f) {
+  const month = f.month;
+  const q = db('sales_entries as se').whereRaw("DATE_FORMAT(se.sale_date, '%Y-%m') = ?", [month]);
+  if (f.repId) q.andWhere('se.rep_id', f.repId);
+  if (f.product) q.andWhere('se.product', f.product);
+  if (f.leadType) q.andWhere('se.lead_type', f.leadType);
+
+  const rows = await q.join('users as u', 'u.id', 'se.rep_id')
+    .select('se.amount', 'se.product', 'se.lead_type', 'se.sale_date', 'se.rep_id', 'u.name as rep_name');
+
+  let totalPaise = 0;
+  const byProduct = {};
+  const byLeadType = { hot: 0, warm: 0, cold: 0 };
+  const byProductAmt = {};
+  const byRep = {};
+  const byDay = {};
+
+  for (const r of rows) {
+    const paise = Math.round(Number(r.amount) * 100);
+    totalPaise += paise;
+    byProduct[r.product] = (byProduct[r.product] || 0) + 1;
+    byProductAmt[r.product] = (byProductAmt[r.product] || 0) + paise;
+    if (byLeadType[r.lead_type] !== undefined) byLeadType[r.lead_type] += 1;
+    if (!byRep[r.rep_id]) byRep[r.rep_id] = { repId: r.rep_id, name: r.rep_name, amount: 0, count: 0 };
+    byRep[r.rep_id].amount += paise;
+    byRep[r.rep_id].count += 1;
+    const day = String(r.sale_date).slice(0, 10);
+    byDay[day] = (byDay[day] || 0) + paise;
+  }
+
+  const toRupees = (p) => Math.round(p) / 100;
+  const trend = Object.keys(byDay).sort().map((d) => ({ date: d, amount: toRupees(byDay[d]) }));
+
+  return {
+    month,
+    totals: { revenue: toRupees(totalPaise), salesCount: rows.length },
+    byProductCount: byProduct,
+    byProductAmount: Object.fromEntries(Object.entries(byProductAmt).map(([k, v]) => [k, toRupees(v)])),
+    byLeadType,
+    byRep: Object.values(byRep)
+      .map((r) => ({ ...r, amount: toRupees(r.amount) }))
+      .sort((a, b) => b.amount - a.amount),
+    trend,
+  };
+}
+
 module.exports = {
   achievementFor,
   repMonthSummary,
   adminOverview,
   recomputeAndStoreIncentive,
+  analytics,
   currentMonth: () => monthKey(new Date()),
 };

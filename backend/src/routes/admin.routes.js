@@ -8,6 +8,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const db = require('../db/knex');
 const dashboard = require('../services/dashboard.service');
 const authService = require('../services/auth.service');
+const audit = require('../services/audit.service');
 const { buildWorkbook } = require('../services/export.service');
 const { purgeOldPhotos } = require('../services/retention.service');
 const { storage } = require('../storage');
@@ -23,10 +24,28 @@ const monthSchema = z.object({
 });
 const monthParam = (req) => req.query.month || dashboard.currentMonth();
 
-// --- Reps list ---
+// --- Reps list (active only, for dropdowns) ---
 router.get('/reps', asyncHandler(async (req, res) => {
-  const reps = await db('users').where({ role: 'rep' }).select('id', 'name', 'email', 'phone');
+  const reps = await db('users').where({ role: 'rep', active: true }).select('id', 'name', 'email', 'phone');
   res.json({ reps });
+}));
+
+// --- List all users (admin-only), with optional search + role/active filters ---
+const usersFilterSchema = z.object({
+  q: z.string().max(120).optional(),
+  role: z.enum(['admin', 'rep']).optional(),
+  active: z.enum(['true', 'false']).optional(),
+});
+router.get('/users', validate({ query: usersFilterSchema }), asyncHandler(async (req, res) => {
+  const qb = db('users').select('id', 'name', 'email', 'phone', 'role', 'active', 'created_at').orderBy('id');
+  if (req.query.role) qb.where('role', req.query.role);
+  if (req.query.active) qb.where('active', req.query.active === 'true');
+  if (req.query.q) {
+    const like = `%${req.query.q}%`;
+    qb.andWhere((b) => b.where('name', 'like', like).orWhere('email', 'like', like));
+  }
+  const users = await qb;
+  res.json({ users });
 }));
 
 // --- Create a user (rep or admin) with an optional initial password ---
@@ -52,14 +71,17 @@ router.post('/users', validate({ body: createUserSchema }), asyncHandler(async (
     role: req.body.role,
     password_hash,
   });
+  await audit.record(req.user, 'user.create', { targetType: 'user', targetId: id, detail: { email, role: req.body.role } });
   res.status(201).json({ ok: true, id });
 }));
 
-// --- Edit a user; may set/replace the password (admin-only) ---
+// --- Edit a user; may change email, role, active state, set/replace password ---
 const updateUserSchema = z.object({
   name: z.string().min(1).max(120).optional(),
+  email: z.string().email().optional(),
   phone: z.string().max(20).optional(),
   role: z.enum(['admin', 'rep']).optional(),
+  active: z.boolean().optional(),
   password: z.string().min(config.auth.minPasswordLength).optional(),
 });
 const userIdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -67,31 +89,55 @@ router.put('/users/:id', validate({ params: userIdParam, body: updateUserSchema 
   const user = await db('users').where({ id: req.params.id }).first();
   if (!user) throw ApiError.notFound('User not found');
 
+  // Guard: don't let an admin deactivate or demote their own account (lockout).
+  if (req.params.id === req.user.id) {
+    if (req.body.active === false) throw ApiError.badRequest('You cannot deactivate your own account');
+    if (req.body.role && req.body.role !== 'admin') throw ApiError.badRequest('You cannot change your own role');
+  }
+
   const patch = {};
   if (req.body.name !== undefined) patch.name = req.body.name;
   if (req.body.phone !== undefined) patch.phone = req.body.phone;
   if (req.body.role !== undefined) patch.role = req.body.role;
+  if (req.body.active !== undefined) patch.active = req.body.active;
+  if (req.body.email !== undefined) {
+    const newEmail = req.body.email.toLowerCase();
+    if (newEmail !== user.email) {
+      const taken = await db('users').where({ email: newEmail }).whereNot({ id: user.id }).first();
+      if (taken) throw ApiError.conflict('A user with that email already exists');
+      patch.email = newEmail;
+    }
+  }
   if (req.body.password !== undefined) {
     patch.password_hash = await authService.hashPassword(req.body.password);
   }
   if (Object.keys(patch).length) await db('users').where({ id: user.id }).update(patch);
+
+  const action = req.body.active === false ? 'user.deactivate'
+    : req.body.active === true ? 'user.activate' : 'user.update';
+  await audit.record(req.user, action, {
+    targetType: 'user',
+    targetId: user.id,
+    detail: { changed: Object.keys(patch), passwordReset: req.body.password !== undefined },
+  });
   res.json({ ok: true });
 }));
 
-// --- Delete a user (admin-only). Cannot delete yourself. ---
+// --- Delete a user permanently (admin-only). Cannot delete yourself. ---
+// NOTE: cascades remove the user's sales/visits/route history. Prefer deactivate.
 router.delete('/users/:id', validate({ params: userIdParam }), asyncHandler(async (req, res) => {
   const id = req.params.id;
   if (id === req.user.id) throw ApiError.badRequest('You cannot delete your own account');
   const user = await db('users').where({ id }).first();
   if (!user) throw ApiError.notFound('User not found');
   await db('users').where({ id }).del(); // FK cascades remove their related rows
+  await audit.record(req.user, 'user.delete', { targetType: 'user', targetId: id, detail: { email: user.email } });
   res.json({ ok: true, deleted: { id, email: user.email } });
 }));
 
-// --- List all users (admin-only) ---
-router.get('/users', asyncHandler(async (req, res) => {
-  const users = await db('users').select('id', 'name', 'email', 'phone', 'role', 'created_at').orderBy('id');
-  res.json({ users });
+// --- Audit log (admin-only) ---
+router.get('/audit', asyncHandler(async (req, res) => {
+  res.json({ entries: await audit.recent(150) });
 }));
 
 // --- Overview: all reps target vs achieved, %, status, surplus, incentive ---
@@ -99,6 +145,23 @@ router.get('/overview', validate({ query: monthSchema }), asyncHandler(async (re
   const month = monthParam(req);
   const overview = await dashboard.adminOverview(month);
   res.json({ month, reps: overview });
+}));
+
+// --- Analytics for charts (filters: month, repId, product, leadType) ---
+const analyticsSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  repId: z.coerce.number().int().positive().optional(),
+  product: z.enum(['schoolmate', 'school_dm', 'general_dm', 'both']).optional(),
+  leadType: z.enum(['hot', 'warm', 'cold']).optional(),
+});
+router.get('/analytics', validate({ query: analyticsSchema }), asyncHandler(async (req, res) => {
+  const data = await dashboard.analytics({
+    month: req.query.month || dashboard.currentMonth(),
+    repId: req.query.repId,
+    product: req.query.product,
+    leadType: req.query.leadType,
+  });
+  res.json(data);
 }));
 
 // --- Set target (per rep, per month) ---

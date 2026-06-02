@@ -45,6 +45,21 @@ export default function Overview() {
       </div>
 
       {loading ? <p>Loading…</p> : (
+       <>
+        {(() => {
+          const totRevenue = reps.reduce((s, r) => s + (r.achievedAmount || 0), 0);
+          const totIncentive = reps.reduce((s, r) => s + (r.incentiveAmount || 0), 0);
+          const achievedCount = reps.filter((r) => r.status === 'achieved').length;
+          return (
+            <div className="stat-grid">
+              <div className="stat-card"><div className="stat-value">{reps.length}</div><div className="stat-label">Reps</div></div>
+              <div className="stat-card"><div className="stat-value">₹ {totRevenue.toLocaleString()}</div><div className="stat-label">Revenue this month</div></div>
+              <div className="stat-card"><div className="stat-value">{achievedCount}/{reps.length}</div><div className="stat-label">Targets achieved</div></div>
+              <div className="stat-card"><div className="stat-value">₹ {totIncentive.toLocaleString()}</div><div className="stat-label">Total incentive</div></div>
+            </div>
+          );
+        })()}
+        <div className="table-wrap">
         <table className="grid">
           <thead>
             <tr>
@@ -73,6 +88,8 @@ export default function Overview() {
             ))}
           </tbody>
         </table>
+        </div>
+       </>
       )}
     </div>
   );
