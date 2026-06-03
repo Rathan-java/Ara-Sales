@@ -86,24 +86,48 @@ router.get('/sales', asyncHandler(async (req, res) => {
   res.json({ month, sales });
 }));
 
-// ============ Clients (for visit reference) ============
+// ============ Clients ============
+// Reps can create/edit client INFO (name, phone, address) but NEVER the location.
+// The location becomes set only when (a) HR pastes a Google Maps link, or
+// (b) the rep visits & photographs the spot and HR approves that captured GPS.
 const clientSchema = z.object({
   name: z.string().min(1).max(190),
-  referenceLat: z.coerce.number().optional(),
-  referenceLng: z.coerce.number().optional(),
+  phone: z.string().max(30).optional(),
+  address: z.string().max(400).optional(),
 });
 router.post('/clients', validate({ body: clientSchema }), asyncHandler(async (req, res) => {
   const [id] = await db('clients').insert({
     name: req.body.name,
-    reference_lat: req.body.referenceLat != null ? Number(req.body.referenceLat).toFixed(7) : null,
-    reference_lng: req.body.referenceLng != null ? Number(req.body.referenceLng).toFixed(7) : null,
+    phone: req.body.phone || null,
+    address: req.body.address || null,
+    location_status: 'unset', // location is set later by HR or via visit+approval
     created_by_rep_id: req.user.id,
   });
   res.status(201).json({ ok: true, id });
 }));
 
+const clientEditSchema = z.object({
+  name: z.string().min(1).max(190).optional(),
+  phone: z.union([z.null(), z.string().max(30)]).optional(),
+  address: z.union([z.null(), z.string().max(400)]).optional(),
+});
+const repClientIdParam = z.object({ id: z.coerce.number().int().positive() });
+router.put('/clients/:id', validate({ params: repClientIdParam, body: clientEditSchema }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  const patch = {};
+  if (req.body.name !== undefined) patch.name = req.body.name;
+  if (req.body.phone !== undefined) patch.phone = req.body.phone;
+  if (req.body.address !== undefined) patch.address = req.body.address;
+  // Note: reps cannot touch reference_lat/lng/location_status here by design.
+  if (Object.keys(patch).length) await db('clients').where({ id: client.id }).update(patch);
+  res.json({ ok: true });
+}));
+
 router.get('/clients', asyncHandler(async (req, res) => {
-  const clients = await db('clients').orderBy('name');
+  const clients = await db('clients')
+    .select('id', 'name', 'phone', 'address', 'reference_lat', 'reference_lng', 'location_status')
+    .orderBy('name');
   res.json({ clients });
 }));
 
@@ -195,14 +219,19 @@ router.post(
     // (a) One-time code: must be the issued code, unused, unexpired (server time).
     const codeCheck = validateVisitCode(visit, req.body.visitCode, nowUtc());
 
-    // (b) Geofence vs client reference (Haversine). New client -> first capture sets ref.
+    // (b) Geofence vs the client's APPROVED reference only. If the location is
+    // not approved yet (unset/pending), there is nothing to validate against, so
+    // the geofence passes and the rep's capture is proposed for HR approval.
     const client = await db('clients').where({ id: visit.client_id }).first();
+    const hasApprovedLocation = client.location_status === 'approved'
+      && client.reference_lat != null && client.reference_lng != null;
     const geo = evaluateGeofence({
-      referenceLat: client.reference_lat,
-      referenceLng: client.reference_lng,
+      referenceLat: hasApprovedLocation ? client.reference_lat : null,
+      referenceLng: hasApprovedLocation ? client.reference_lng : null,
       captureLat: req.body.captureLat,
       captureLng: req.body.captureLng,
-      radiusM: config.visit.geofenceRadiusM,
+      // Use the client's own radius if HR set one; else the global default.
+      radiusM: client.geofence_radius_m != null ? Number(client.geofence_radius_m) : config.visit.geofenceRadiusM,
     });
 
     // (c) Mock-location / fake GPS reported by the device.
@@ -243,11 +272,16 @@ router.post(
       status,
     });
 
-    // First verified capture for a reference-less client becomes the reference.
-    if (geo.noReference) {
+    // If the client has no APPROVED location yet, this capture is PROPOSED to HR
+    // for approval (it does NOT auto-become the permanent location anymore).
+    // Only set a proposal if there isn't already an approved location.
+    if (!hasApprovedLocation) {
       await db('clients').where({ id: client.id }).update({
-        reference_lat: Number(req.body.captureLat).toFixed(7),
-        reference_lng: Number(req.body.captureLng).toFixed(7),
+        location_status: 'pending',
+        location_source: 'rep',
+        pending_lat: Number(req.body.captureLat).toFixed(7),
+        pending_lng: Number(req.body.captureLng).toFixed(7),
+        pending_visit_id: visit.id,
       });
     }
 

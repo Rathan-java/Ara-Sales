@@ -196,6 +196,148 @@ router.post('/incentive-preview', validate({ body: previewSchema }), asyncHandle
   res.json(result);
 }));
 
+// --- Clients management (admin) ---
+const { resolveGoogleMapsLocation } = require('../services/geocode.service');
+const { storage: photoStorage } = require('../storage');
+
+// List all clients with location status + (for pending) the proposed point/photo.
+router.get('/clients', asyncHandler(async (req, res) => {
+  const clients = await db('clients as c')
+    .leftJoin('users as u', 'u.id', 'c.created_by_rep_id')
+    .select(
+      'c.id', 'c.name', 'c.phone', 'c.address',
+      'c.reference_lat', 'c.reference_lng', 'c.geofence_radius_m',
+      'c.location_status', 'c.location_source',
+      'c.pending_lat', 'c.pending_lng', 'c.pending_visit_id',
+      'c.created_at', 'u.name as created_by',
+    )
+    .orderBy('c.name');
+  // Attach the pending visit photo URL (if any) for HR review.
+  for (const c of clients) {
+    if (c.pending_visit_id) {
+      const ph = await db('visit_photos').where('visit_id', c.pending_visit_id).first();
+      c.pending_photo_url = ph ? photoStorage.publicUrl(ph.file_path) : null;
+    }
+  }
+  res.json({ clients, defaultRadiusM: config.visit.geofenceRadiusM });
+}));
+
+// Create a client (HR). Location optional — can be set now via Google link/coords.
+const clientCreateSchema = z.object({
+  name: z.string().min(1).max(190),
+  phone: z.string().max(30).optional(),
+  address: z.string().max(400).optional(),
+  googleLocation: z.string().max(2000).optional(), // pasted Google Maps link or "lat,lng"
+  geofenceRadiusM: z.coerce.number().int().min(10).max(5000).optional(),
+});
+router.post('/clients', validate({ body: clientCreateSchema }), asyncHandler(async (req, res) => {
+  let lat = null; let lng = null; let status = 'unset';
+  if (req.body.googleLocation) {
+    const loc = await resolveGoogleMapsLocation(req.body.googleLocation);
+    if (!loc) throw ApiError.badRequest('Could not read coordinates from that Google Maps link. Paste the full URL or "lat, lng".');
+    lat = loc.lat.toFixed(7); lng = loc.lng.toFixed(7); status = 'approved';
+  }
+  const [id] = await db('clients').insert({
+    name: req.body.name,
+    phone: req.body.phone || null,
+    address: req.body.address || null,
+    reference_lat: lat,
+    reference_lng: lng,
+    location_status: status,
+    location_source: status === 'approved' ? 'hr' : null,
+    location_updated_by: status === 'approved' ? req.user.id : null,
+    location_updated_at: status === 'approved' ? db.fn.now() : null,
+    geofence_radius_m: req.body.geofenceRadiusM != null ? req.body.geofenceRadiusM : null,
+    created_by_rep_id: req.user.id,
+  });
+  res.status(201).json({ ok: true, id });
+}));
+
+const clientIdParam = z.object({ id: z.coerce.number().int().positive() });
+
+// Edit client info + radius (HR). Does NOT change the location here (see set-location).
+const clientUpdateSchema = z.object({
+  name: z.string().min(1).max(190).optional(),
+  phone: z.union([z.null(), z.string().max(30)]).optional(),
+  address: z.union([z.null(), z.string().max(400)]).optional(),
+  geofenceRadiusM: z.union([z.null(), z.coerce.number().int().min(10).max(5000)]).optional(),
+});
+router.put('/clients/:id', validate({ params: clientIdParam, body: clientUpdateSchema }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  const patch = {};
+  if (req.body.name !== undefined) patch.name = req.body.name;
+  if (req.body.phone !== undefined) patch.phone = req.body.phone;
+  if (req.body.address !== undefined) patch.address = req.body.address;
+  if (req.body.geofenceRadiusM !== undefined) patch.geofence_radius_m = req.body.geofenceRadiusM;
+  if (Object.keys(patch).length) await db('clients').where({ id: client.id }).update(patch);
+  res.json({ ok: true });
+}));
+
+// Set / replace the APPROVED location (HR only) by pasting a Google Maps link or coords.
+const setLocationSchema = z.object({ googleLocation: z.string().min(1).max(2000) });
+router.put('/clients/:id/location', validate({ params: clientIdParam, body: setLocationSchema }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  const loc = await resolveGoogleMapsLocation(req.body.googleLocation);
+  if (!loc) throw ApiError.badRequest('Could not read coordinates. Paste the full Google Maps URL or "lat, lng".');
+  await db('clients').where({ id: client.id }).update({
+    reference_lat: loc.lat.toFixed(7),
+    reference_lng: loc.lng.toFixed(7),
+    location_status: 'approved',
+    location_source: 'hr',
+    pending_lat: null, pending_lng: null, pending_visit_id: null, // clear any pending proposal
+    location_updated_by: req.user.id,
+    location_updated_at: db.fn.now(),
+  });
+  await db('audit_logs').insert({
+    actor_id: req.user.id, actor_email: req.user.email, action: 'client.location.set',
+    target_type: 'client', target_id: String(client.id), detail: JSON.stringify(loc),
+  }).catch(() => {});
+  res.json({ ok: true, lat: loc.lat, lng: loc.lng });
+}));
+
+// Approve a rep-proposed (pending) location -> becomes permanent (HR only).
+router.post('/clients/:id/location/approve', validate({ params: clientIdParam }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  if (client.location_status !== 'pending' || client.pending_lat == null) {
+    throw ApiError.badRequest('No pending location to approve for this client');
+  }
+  await db('clients').where({ id: client.id }).update({
+    reference_lat: client.pending_lat,
+    reference_lng: client.pending_lng,
+    location_status: 'approved',
+    location_source: 'rep',
+    pending_lat: null, pending_lng: null, pending_visit_id: null,
+    location_updated_by: req.user.id,
+    location_updated_at: db.fn.now(),
+  });
+  await db('audit_logs').insert({
+    actor_id: req.user.id, actor_email: req.user.email, action: 'client.location.approve',
+    target_type: 'client', target_id: String(client.id),
+  }).catch(() => {});
+  res.json({ ok: true });
+}));
+
+// Reject a pending location -> back to unset (HR only).
+router.post('/clients/:id/location/reject', validate({ params: clientIdParam }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  await db('clients').where({ id: client.id }).update({
+    location_status: client.reference_lat ? 'approved' : 'unset',
+    pending_lat: null, pending_lng: null, pending_visit_id: null,
+  });
+  res.json({ ok: true });
+}));
+
+router.delete('/clients/:id', validate({ params: clientIdParam }), asyncHandler(async (req, res) => {
+  const client = await db('clients').where({ id: req.params.id }).first();
+  if (!client) throw ApiError.notFound('Client not found');
+  await db('clients').where({ id: client.id }).del();
+  res.json({ ok: true });
+}));
+
 // --- Analytics for charts (filters: month, repId, product, leadType) ---
 const analyticsSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),

@@ -10,6 +10,7 @@ import Visits from './pages/Visits.jsx';
 import Setup from './pages/Setup.jsx';
 import Users from './pages/Users.jsx';
 import IncentiveSettings from './pages/IncentiveSettings.jsx';
+import Clients from './pages/Clients.jsx';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ function Shell({ children }) {
     ['/sales', 'Sales'],
     ['/movement', 'Movement'],
     ['/visits', 'Visits'],
+    ['/clients', 'Clients'],
     ['/setup', 'Targets & Salary'],
     ['/incentives', 'Incentive Settings'],
     ['/users', 'User Management'],
@@ -65,6 +67,7 @@ export default function App() {
       <Route path="/visits" element={<RequireAuth><Shell><Visits /></Shell></RequireAuth>} />
       <Route path="/setup" element={<RequireAuth><Shell><Setup /></Shell></RequireAuth>} />
       <Route path="/incentives" element={<RequireAuth><Shell><IncentiveSettings /></Shell></RequireAuth>} />
+      <Route path="/clients" element={<RequireAuth><Shell><Clients /></Shell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
