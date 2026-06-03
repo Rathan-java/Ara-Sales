@@ -58,6 +58,11 @@ class ApiService {
     return _decode(res);
   }
 
+  Future<dynamic> put(String path, Map<String, dynamic> body) async {
+    final res = await http.put(_uri(path), headers: _headers, body: jsonEncode(body));
+    return _decode(res);
+  }
+
   dynamic _decode(http.Response res) {
     final body = res.body.isEmpty ? {} : jsonDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) return body;

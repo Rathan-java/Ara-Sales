@@ -5,6 +5,7 @@ import 'sales_entry_screen.dart';
 import 'work_screen.dart';
 import 'visit_screen.dart';
 import 'analytics_screen.dart';
+import 'clients_screen.dart';
 import 'login_screen.dart';
 
 /// Rep dashboard: current month split into Achieved + Pending.
@@ -199,6 +200,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             })),
             Expanded(child: _navBtn(Icons.camera_alt, 'Visit', () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitScreen()));
+            })),
+            Expanded(child: _navBtn(Icons.people_alt, 'Clients', () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ClientsScreen()));
             })),
           ],
         ),
