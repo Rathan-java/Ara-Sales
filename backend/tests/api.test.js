@@ -151,7 +151,8 @@ test('API integration', { concurrency: false }, async (t) => {
     const ravi = res.body.reps.find((r) => r.email === 'ravi@ara.test');
     assert.ok(ravi);
     assert.equal(ravi.monthlySalary, 20000);
-    assert.equal(ravi.incentiveAmount, 4000); // worked example from seed
+    // Tiered incentive: seed surplus = 120000-100000 = 20000, first slab 5% => 1000.
+    assert.equal(ravi.incentiveAmount, 1000);
   });
 
   await t.test('input validation rejects a bad sales entry', async () => {

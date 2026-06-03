@@ -9,6 +9,7 @@ import Movement from './pages/Movement.jsx';
 import Visits from './pages/Visits.jsx';
 import Setup from './pages/Setup.jsx';
 import Users from './pages/Users.jsx';
+import IncentiveSettings from './pages/IncentiveSettings.jsx';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ function Shell({ children }) {
     ['/movement', 'Movement'],
     ['/visits', 'Visits'],
     ['/setup', 'Targets & Salary'],
+    ['/incentives', 'Incentive Settings'],
     ['/users', 'User Management'],
   ];
   return (
@@ -62,6 +64,7 @@ export default function App() {
       <Route path="/movement" element={<RequireAuth><Shell><Movement /></Shell></RequireAuth>} />
       <Route path="/visits" element={<RequireAuth><Shell><Visits /></Shell></RequireAuth>} />
       <Route path="/setup" element={<RequireAuth><Shell><Setup /></Shell></RequireAuth>} />
+      <Route path="/incentives" element={<RequireAuth><Shell><IncentiveSettings /></Shell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

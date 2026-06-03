@@ -147,6 +147,55 @@ router.get('/overview', validate({ query: monthSchema }), asyncHandler(async (re
   res.json({ month, reps: overview });
 }));
 
+// --- Incentive tiers (HR-configured slab scale, global) ---
+const { getGlobalTiers, replaceGlobalTiers } = require('../services/tiers.service');
+const { computeTieredIncentive } = require('../services/incentive.service');
+
+router.get('/incentive-tiers', asyncHandler(async (req, res) => {
+  const tiers = await getGlobalTiers();
+  res.json({ tiers });
+}));
+
+const tierSchema = z.object({
+  from: z.coerce.number().min(0),
+  // null/blank => open-ended. Put null FIRST so it isn't coerced to 0.
+  to: z.union([z.null(), z.coerce.number().min(0)]).optional(),
+  percent: z.coerce.number().min(0).max(100),
+});
+const saveTiersSchema = z.object({
+  tiers: z.array(tierSchema).min(1).max(5),
+});
+router.put('/incentive-tiers', validate({ body: saveTiersSchema }), asyncHandler(async (req, res) => {
+  const tiers = await replaceGlobalTiers(req.body.tiers);
+  // Audit who changed the incentive scale.
+  try {
+    await db('audit_logs').insert({
+      actor_id: req.user.id,
+      actor_email: req.user.email,
+      action: 'incentive_tiers.update',
+      target_type: 'incentive_tiers',
+      target_id: 'global',
+      detail: JSON.stringify(tiers),
+    });
+  } catch { /* audit table may not exist on older deploys; ignore */ }
+  res.json({ ok: true, tiers });
+}));
+
+// Live preview: given target + achieved (+ optional tiers), return the calc.
+const previewSchema = z.object({
+  revenueTarget: z.coerce.number().min(0),
+  achievedAmount: z.coerce.number().min(0),
+  tiers: z.array(tierSchema).min(1).max(5).optional(),
+});
+router.post('/incentive-preview', validate({ body: previewSchema }), asyncHandler(async (req, res) => {
+  const tiers = Array.isArray(req.body.tiers) ? req.body.tiers : await getGlobalTiers();
+  const result = computeTieredIncentive(
+    { revenueTarget: req.body.revenueTarget, achievedAmount: req.body.achievedAmount },
+    tiers,
+  );
+  res.json(result);
+}));
+
 // --- Analytics for charts (filters: month, repId, product, leadType) ---
 const analyticsSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),

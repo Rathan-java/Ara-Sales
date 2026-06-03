@@ -7,17 +7,9 @@
  */
 
 const db = require('../db/knex');
-const { evaluateEitherOne, computeIncentive } = require('./incentive.service');
-const config = require('../config');
+const { evaluateEitherOne, computeTieredIncentive } = require('./incentive.service');
+const { getGlobalTiers } = require('./tiers.service');
 const { monthKey } = require('../utils/time');
-
-function incentiveConfig() {
-  return {
-    multiplier: config.incentive.multiplier,
-    capEnabled: config.incentive.capEnabled,
-    maxIncentiveAmount: config.incentive.maxIncentiveAmount,
-  };
-}
 
 /** Sum achieved revenue + distinct client count for a rep in a month. */
 async function achievementFor(repId, month) {
@@ -53,7 +45,7 @@ async function achievementFor(repId, month) {
  * incentive internals are exposed. Rep-facing callers MUST pass false; only the
  * resulting incentive amount (when there is a surplus) is included for reps.
  */
-async function repMonthSummary(repId, month, { includeSalary }) {
+async function repMonthSummary(repId, month, { includeSalary, tiers }) {
   const target = await db('targets').where({ rep_id: repId, month }).first();
   const salaryRow = await db('salaries').where({ rep_id: repId, month }).first();
 
@@ -70,9 +62,13 @@ async function repMonthSummary(repId, month, { includeSalary }) {
     achievedAmount: ach.achievedAmount,
   });
 
-  const inc = computeIncentive(
-    { revenueTarget, achievedAmount: ach.achievedAmount, monthlySalary },
-    incentiveConfig(),
+  // Tiered incentive on the revenue surplus (HR-configured slabs). Salary is no
+  // longer part of the calculation. Tiers may be passed in (to avoid reloading
+  // them in a loop); otherwise load the global set.
+  const slabs = tiers || await getGlobalTiers();
+  const inc = computeTieredIncentive(
+    { revenueTarget, achievedAmount: ach.achievedAmount },
+    slabs,
   );
 
   const base = {
@@ -97,7 +93,10 @@ async function repMonthSummary(repId, month, { includeSalary }) {
     salesCount: ach.salesCount,
     // Incentive is shown to reps ONLY when there is a revenue surplus.
     incentiveAmount: inc.hasRevenueSurplus ? inc.incentiveAmount : 0,
-    surplusPct: inc.surplusPct,
+    // Per-slab breakdown so the UI can show how the incentive was built up.
+    incentiveBreakdown: inc.breakdown || [],
+    // Effective % of surplus paid out (for display only), e.g. 6500/150000 = 4.33%.
+    surplusPct: inc.surplus > 0 ? Math.round((inc.incentiveAmount / inc.surplus) * 10000) / 100 : 0,
   };
 
   if (includeSalary) {
@@ -110,9 +109,10 @@ async function repMonthSummary(repId, month, { includeSalary }) {
 /** Admin overview: all reps for a month. Includes salary/incentive internals. */
 async function adminOverview(month) {
   const reps = await db('users').where({ role: 'rep' }).select('id', 'name', 'email');
+  const tiers = await getGlobalTiers(); // load once, reuse for every rep
   const out = [];
   for (const rep of reps) {
-    const summary = await repMonthSummary(rep.id, month, { includeSalary: true });
+    const summary = await repMonthSummary(rep.id, month, { includeSalary: true, tiers });
     out.push({ name: rep.name, email: rep.email, ...summary });
   }
   return out;
