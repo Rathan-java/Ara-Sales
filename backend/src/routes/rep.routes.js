@@ -241,6 +241,7 @@ router.post(
       codeValid: codeCheck.valid,
       geofencePass: geo.pass,
       mockLocation,
+      rejectOnMock: config.visit.rejectOnMock,
     });
 
     // Reject outright on invalid code or mock GPS — do NOT store the photo.

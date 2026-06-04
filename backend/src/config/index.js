@@ -96,6 +96,9 @@ const config = {
     // 5 min: capturing a photo + GPS fix + compress + upload can take well over
     // 90s on a slow field connection, which would otherwise expire the code.
     codeTtlSeconds: num(process.env.VISIT_CODE_TTL_SECONDS, 300),
+    // Mock-GPS handling: false = FLAG for HR review (default; avoids false
+    // rejects on phones that wrongly report mock). true = hard reject.
+    rejectOnMock: bool(process.env.VISIT_REJECT_ON_MOCK, false),
   },
 
   // Visit-photo downscaling before storage. Keeps photos small (~40-120 KB) so
