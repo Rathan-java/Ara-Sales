@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { api } from '../api/client.js';
+import { useMyLocation } from '../useMyLocation.js';
 
 // Fix default marker icons (Leaflet + bundlers).
 const visitIcon = new L.Icon({
@@ -37,6 +38,7 @@ export default function Movement() {
   const [live, setLive] = useState([]);               // live positions
   const [updatedAt, setUpdatedAt] = useState(null);
   const timer = useRef(null);
+  const { center: myLocation } = useMyLocation(); // admin's own location as map fallback
 
   useEffect(() => {
     api.get('/admin/reps').then((r) => {
@@ -76,7 +78,8 @@ export default function Movement() {
   const markers = data?.visitMarkers || [];
   const histPts = sessions.flatMap((s) => s.pings.map((p) => [Number(p.lat), Number(p.lng)]));
   const livePts = live.map((l) => [Number(l.lat), Number(l.lng)]);
-  const center = (mode === 'live' ? livePts[0] : histPts[0]) || [12.9716, 77.5946];
+  // Center on the rep's data if present, else on the admin's own current location.
+  const center = (mode === 'live' ? livePts[0] : histPts[0]) || myLocation;
   const hasData = histPts.length > 0;
 
   return (
@@ -125,7 +128,7 @@ export default function Movement() {
       )}
 
       <div className="map-box">
-        <MapContainer center={center} zoom={13} style={{ height: '68vh', width: '100%' }} key={`${mode}-${repId}-${date}`}>
+        <MapContainer center={center} zoom={13} style={{ height: '68vh', width: '100%' }} key={`${mode}-${repId}-${date}-${center[0].toFixed(3)},${center[1].toFixed(3)}`}>
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"

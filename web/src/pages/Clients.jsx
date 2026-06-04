@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { api } from '../api/client.js';
+import { useMyLocation } from '../useMyLocation.js';
 
 const icon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -36,6 +37,7 @@ export default function Clients() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [editing, setEditing] = useState(null); // client object being location-edited
+  const { center: myLocation } = useMyLocation(); // admin's location, for the map default
 
   // New client form
   const [nName, setNName] = useState('');
@@ -204,7 +206,7 @@ export default function Clients() {
           </div>
           {!previewPin && locText && <div className="muted" style={{ marginTop: 6 }}>Couldn’t read coordinates yet — paste a full URL or “lat, lng”. (Short goo.gl links are resolved on save.)</div>}
           <div className="map-box" style={{ marginTop: 12 }}>
-            <MapContainer center={previewPin ? [previewPin.lat, previewPin.lng] : [12.9716, 77.5946]} zoom={previewPin ? 16 : 11} style={{ height: '50vh', width: '100%' }} key={previewPin ? `${previewPin.lat},${previewPin.lng}` : 'none'}>
+            <MapContainer center={previewPin ? [previewPin.lat, previewPin.lng] : myLocation} zoom={previewPin ? 16 : 12} style={{ height: '50vh', width: '100%' }} key={previewPin ? `${previewPin.lat},${previewPin.lng}` : `me-${myLocation[0].toFixed(3)},${myLocation[1].toFixed(3)}`}>
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
               <ClickToPin onPick={(p) => setLocText(`${p.lat.toFixed(7)}, ${p.lng.toFixed(7)}`)} />
               {previewPin && <Marker position={[previewPin.lat, previewPin.lng]} icon={icon} />}
