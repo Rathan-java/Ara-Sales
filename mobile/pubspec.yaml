@@ -26,6 +26,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+# App launcher icon (run: flutter pub run flutter_launcher_icons)
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/app_icon.png"
+  # The logo sits on a white card, so use a white background for the Android
+  # adaptive (round/squircle) icon and inset the logo into the safe area.
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/app_icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
