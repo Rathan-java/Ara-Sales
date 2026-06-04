@@ -244,7 +244,9 @@ router.post(
       rejectOnMock: config.visit.rejectOnMock,
     });
 
-    // Reject outright on invalid code or mock GPS — do NOT store the photo.
+    // Reject only on an invalid one-time code (or mock GPS in strict mode).
+    // A rejected visit does NOT store the photo. Mock GPS by default -> 'flag'
+    // (accepted + stored + surfaced to HR), so genuine reps are never blocked.
     if (status === 'reject') {
       await db('visits').where({ id: visit.id }).update({
         capture_lat: Number(req.body.captureLat).toFixed(7),
@@ -273,16 +275,21 @@ router.post(
       status,
     });
 
-    // If the client has no APPROVED location yet, this capture is PROPOSED to HR
-    // for approval (it does NOT auto-become the permanent location anymore).
-    // Only set a proposal if there isn't already an approved location.
-    if (!hasApprovedLocation) {
+    // If the client has no APPROVED location yet, the rep's capture becomes the
+    // client's permanent location immediately (no HR approval needed). HR can
+    // still change it later by pasting a Google Maps link. Mock-GPS captures are
+    // skipped so a spoofed fix can never silently become the permanent location.
+    if (!hasApprovedLocation && !mockLocation) {
       await db('clients').where({ id: client.id }).update({
-        location_status: 'pending',
+        reference_lat: Number(req.body.captureLat).toFixed(7),
+        reference_lng: Number(req.body.captureLng).toFixed(7),
+        location_status: 'approved',
         location_source: 'rep',
-        pending_lat: Number(req.body.captureLat).toFixed(7),
-        pending_lng: Number(req.body.captureLng).toFixed(7),
-        pending_visit_id: visit.id,
+        pending_lat: null,
+        pending_lng: null,
+        pending_visit_id: null,
+        location_updated_by: req.user.id,
+        location_updated_at: toMysqlDateTime(nowUtc()),
       });
     }
 

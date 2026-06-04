@@ -190,6 +190,56 @@ test('API integration', { concurrency: false }, async (t) => {
     assert.equal(res.body.error.details.codeValid, false);
   });
 
+  async function makeClient(name) {
+    const created = await request(app)
+      .post('/api/rep/clients')
+      .set('Authorization', `Bearer ${repToken}`)
+      .send({ name });
+    assert.equal(created.status, 201);
+    return created.body.id;
+  }
+  async function getClient(id) {
+    const r = await request(app).get('/api/admin/clients').set('Authorization', `Bearer ${adminToken}`);
+    return r.body.clients.find((x) => x.id === id);
+  }
+
+  await t.test('real capture at an unset client AUTO-SETS its location (approved)', async () => {
+    const id = await makeClient('Auto Location Client');
+    const start = await request(app)
+      .post('/api/rep/visits/start').set('Authorization', `Bearer ${repToken}`)
+      .send({ clientId: id });
+    const res = await request(app)
+      .post('/api/rep/visits/submit').set('Authorization', `Bearer ${repToken}`)
+      .field('visitId', String(start.body.visitId))
+      .field('visitCode', start.body.visitCode)
+      .field('captureLat', '11.0001').field('captureLng', '79.0001')
+      .attach('photo', Buffer.from('fake-jpeg-bytes'), 'photo.jpg');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'pass');
+    const c = await getClient(id);
+    assert.equal(c.location_status, 'approved');
+    assert.ok(c.reference_lat != null, 'reference_lat auto-set from the capture');
+  });
+
+  await t.test('mock GPS is FLAGGED (not rejected) and does NOT set the location', async () => {
+    const id = await makeClient('Mock GPS Client');
+    const start = await request(app)
+      .post('/api/rep/visits/start').set('Authorization', `Bearer ${repToken}`)
+      .send({ clientId: id });
+    const res = await request(app)
+      .post('/api/rep/visits/submit').set('Authorization', `Bearer ${repToken}`)
+      .field('visitId', String(start.body.visitId))
+      .field('visitCode', start.body.visitCode)
+      .field('captureLat', '11.0001').field('captureLng', '79.0001')
+      .field('mockLocation', 'true')
+      .attach('photo', Buffer.from('fake-jpeg-bytes'), 'photo.jpg');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'flag'); // accepted, not rejected
+    const c = await getClient(id);
+    assert.equal(c.location_status, 'unset'); // spoofed fix did NOT become the location
+    assert.ok(c.reference_lat == null);
+  });
+
   await t.test('admin export returns an xlsx stream', async () => {
     const res = await request(app)
       .get('/api/admin/export')

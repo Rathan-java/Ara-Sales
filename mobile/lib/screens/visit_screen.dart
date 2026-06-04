@@ -203,7 +203,12 @@ class _VisitScreenState extends State<VisitScreen> {
       child: Row(children: [
         Icon(pass ? Icons.verified : Icons.warning, color: pass ? Colors.green : Colors.orange),
         const SizedBox(width: 8),
-        Text(pass ? 'Visit verified (pass)' : 'Visit accepted but FLAGGED'),
+        Expanded(
+          child: Text(pass
+              ? 'Visit verified — photo submitted successfully.'
+              : 'Visit submitted and flagged for review (location check). '
+                'The photo was saved; HR will verify it.'),
+        ),
       ]),
     );
   }
