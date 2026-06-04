@@ -185,35 +185,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // Bottom action bar. Uses BottomNavigationBar so 4 items lay out cleanly
+  // (icon above a single-line label) at any screen width — no text wrapping.
   Widget _actionsBar() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Row(
-          children: [
-            Expanded(child: _navBtn(Icons.add_chart, 'Add Sale', () async {
-              await Navigator.push(context, MaterialPageRoute(builder: (_) => const SalesEntryScreen()));
-              _load();
-            })),
-            Expanded(child: _navBtn(Icons.directions_walk, 'Work', () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkScreen()));
-            })),
-            Expanded(child: _navBtn(Icons.camera_alt, 'Visit', () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitScreen()));
-            })),
-            Expanded(child: _navBtn(Icons.people_alt, 'Clients', () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ClientsScreen()));
-            })),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _navBtn(IconData icon, String label, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: FilledButton.tonalIcon(onPressed: onTap, icon: Icon(icon), label: Text(label)),
+    return BottomNavigationBar(
+      type: BottomNavigationBarType.fixed, // required for 4+ items
+      currentIndex: 0,
+      selectedItemColor: const Color(0xFF2563EB),
+      unselectedItemColor: const Color(0xFF2563EB),
+      showUnselectedLabels: true,
+      onTap: (i) async {
+        switch (i) {
+          case 0:
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => const SalesEntryScreen()));
+            _load();
+            break;
+          case 1:
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkScreen()));
+            break;
+          case 2:
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitScreen()));
+            break;
+          case 3:
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const ClientsScreen()));
+            break;
+        }
+      },
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.add_chart), label: 'Add Sale'),
+        BottomNavigationBarItem(icon: Icon(Icons.directions_walk), label: 'Work'),
+        BottomNavigationBarItem(icon: Icon(Icons.camera_alt), label: 'Visit'),
+        BottomNavigationBarItem(icon: Icon(Icons.people_alt), label: 'Clients'),
+      ],
     );
   }
 }
