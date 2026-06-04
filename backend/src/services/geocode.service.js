@@ -51,8 +51,22 @@ function parseCoordsFromText(input) {
     if (valid(lat, lng)) return { lat, lng };
   }
 
-  // 4) plain "lat, lng" (only if the WHOLE string is basically that)
+  // 4) "Latitude: <lat> Longitude: <lng>" (common copy format, any separator)
+  m = s.match(/lat(?:itude)?\s*[:=]?\s*(-?\d+(?:\.\d+)?)[\s,;]+long?(?:itude)?\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i);
+  if (m) {
+    const lat = parseFloat(m[1]); const lng = parseFloat(m[2]);
+    if (valid(lat, lng)) return { lat, lng };
+  }
+
+  // 5) plain "lat, lng" (only if the WHOLE string is basically that)
   m = s.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if (m) {
+    const lat = parseFloat(m[1]); const lng = parseFloat(m[2]);
+    if (valid(lat, lng)) return { lat, lng };
+  }
+
+  // 6) two bare numbers separated by space/comma anywhere (last resort)
+  m = s.match(/(-?\d{1,2}\.\d+)[\s,]+(-?\d{1,3}\.\d+)/);
   if (m) {
     const lat = parseFloat(m[1]); const lng = parseFloat(m[2]);
     if (valid(lat, lng)) return { lat, lng };

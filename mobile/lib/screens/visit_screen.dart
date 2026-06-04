@@ -105,7 +105,7 @@ class _VisitScreenState extends State<VisitScreen> {
       );
       setState(() => _status = result.status);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = _explainError(e));
     } finally {
       setState(() => _busy = false);
     }
@@ -165,6 +165,31 @@ class _VisitScreenState extends State<VisitScreen> {
         ),
       ),
     );
+  }
+
+  // Turn a server rejection into a clear, human reason.
+  String _explainError(Object e) {
+    if (e is ApiException && e.body is Map) {
+      final d = (e.body as Map)['error'];
+      final details = d is Map ? d['details'] : null;
+      if (details is Map) {
+        if (details['mockLocation'] == true) {
+          return 'Visit rejected: your phone reported a mock/fake GPS location. '
+              'Turn off any “mock location” / developer GPS apps and use real GPS.';
+        }
+        if (details['codeValid'] == false) {
+          final reason = details['codeReason'];
+          if (reason == 'expired') {
+            return 'Visit rejected: the one-time code expired before upload. '
+                'Please tap Start Visit and capture again without delay.';
+          }
+          return 'Visit rejected: the verification code was invalid. Please try again.';
+        }
+      }
+      final msg = d is Map ? d['message'] : null;
+      if (msg != null) return '$msg';
+    }
+    return e.toString().replaceFirst('Exception: ', '');
   }
 
   Widget _resultBanner(String status) {

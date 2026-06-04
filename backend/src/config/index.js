@@ -93,7 +93,9 @@ const config = {
 
   visit: {
     geofenceRadiusM: num(process.env.GEOFENCE_RADIUS_M, 150),
-    codeTtlSeconds: num(process.env.VISIT_CODE_TTL_SECONDS, 90),
+    // 5 min: capturing a photo + GPS fix + compress + upload can take well over
+    // 90s on a slow field connection, which would otherwise expire the code.
+    codeTtlSeconds: num(process.env.VISIT_CODE_TTL_SECONDS, 300),
   },
 
   // Visit-photo downscaling before storage. Keeps photos small (~40-120 KB) so

@@ -20,7 +20,14 @@ function parseCoords(text) {
   if (m) return { lat: +m[1], lng: +m[2] };
   m = text.match(/[?&](?:q|ll|query)=(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (m) return { lat: +m[1], lng: +m[2] };
+  // "Latitude: <lat> Longitude: <lng>" copy format
+  m = text.match(/lat(?:itude)?\s*[:=]?\s*(-?\d+(?:\.\d+)?)[\s,;]+long?(?:itude)?\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i);
+  if (m) return { lat: +m[1], lng: +m[2] };
+  // plain "lat, lng"
   m = text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if (m) return { lat: +m[1], lng: +m[2] };
+  // two bare numbers anywhere (last resort)
+  m = text.match(/(-?\d{1,2}\.\d+)[\s,]+(-?\d{1,3}\.\d+)/);
   if (m) return { lat: +m[1], lng: +m[2] };
   return null;
 }

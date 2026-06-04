@@ -30,6 +30,18 @@ test('maps URL with ?q=lat,lng', () => {
   assert.deepEqual(r, { lat: 12.9716, lng: 77.5946 });
 });
 
+test('"Latitude: x Longitude: y" copy format', () => {
+  assert.deepEqual(parseCoordsFromText('Latitude: 10.7852635 Longitude: 79.1271395'),
+    { lat: 10.7852635, lng: 79.1271395 });
+  assert.deepEqual(parseCoordsFromText('Latitude:10.7852635,Longitude:79.1271395'),
+    { lat: 10.7852635, lng: 79.1271395 });
+});
+
+test('two bare numbers separated by space', () => {
+  assert.deepEqual(parseCoordsFromText('10.7852635 79.1271395'),
+    { lat: 10.7852635, lng: 79.1271395 });
+});
+
 test('rejects garbage', () => {
   assert.equal(parseCoordsFromText('not a location'), null);
   assert.equal(parseCoordsFromText(''), null);
