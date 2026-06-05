@@ -24,7 +24,7 @@ class _WorkScreenState extends State<WorkScreen> {
         await LocationService.instance.startWork();
       }
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       setState(() => _busy = false);
     }
@@ -55,15 +55,40 @@ class _WorkScreenState extends State<WorkScreen> {
             FilledButton.icon(
               onPressed: _busy ? null : _toggle,
               icon: Icon(_tracking ? Icons.stop : Icons.play_arrow),
-              label: Text(_tracking ? 'End Work' : 'Start Work'),
+              label: Text(_busy ? 'Please wait…' : (_tracking ? 'End Work' : 'Start Work')),
               style: FilledButton.styleFrom(
                 backgroundColor: _tracking ? Colors.red : const Color(0xFF2563EB),
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
               ),
             ),
+            // Safety: if a session was left open on the server (app closed
+            // without ending), let the rep force-close it.
+            if (!_tracking) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _busy ? null : _forceEnd,
+                child: const Text('End a previous (still-open) work session'),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _forceEnd() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      await LocationService.instance.endWork();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Any open work session has been ended.')),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }

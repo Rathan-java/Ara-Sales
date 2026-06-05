@@ -69,12 +69,34 @@ class LocationService {
   }
 
   /// Start a work session on the server and begin background pinging.
+  ///
+  /// If the server says a session is already active (e.g. the app was closed
+  /// without tapping End Work, so the server session is still open while local
+  /// state was lost), we transparently RESUME that existing session instead of
+  /// failing — the rep is never stuck.
   Future<int> startWork() async {
     final ok = await ensurePermission();
     if (!ok) throw Exception('Location permission denied');
 
-    final res = await ApiService.instance.post('/rep/work/start', {});
-    _activeSessionId = res['sessionId'] as int;
+    int sessionId;
+    try {
+      final res = await ApiService.instance.post('/rep/work/start', {});
+      sessionId = res['sessionId'] as int;
+    } on ApiException catch (e) {
+      // 409 conflict -> a session is already open on the server. Resume it.
+      final existing = e.body is Map &&
+              (e.body as Map)['error'] is Map &&
+              ((e.body as Map)['error'] as Map)['details'] is Map
+          ? (((e.body as Map)['error'] as Map)['details'] as Map)['sessionId']
+          : null;
+      if (e.status == 409 && existing != null) {
+        sessionId = existing as int;
+      } else {
+        rethrow;
+      }
+    }
+
+    _activeSessionId = sessionId;
     _lastSentAt = null;
 
     // Pick platform settings. geolocator selects the right impl per OS, but the
@@ -126,12 +148,18 @@ class LocationService {
     }
   }
 
+  /// End the active work session. Calls the server unconditionally so it also
+  /// closes a session that's open on the server even if local state was lost
+  /// (the server ends "the rep's open session", not a specific id). A 404 (no
+  /// active session) is treated as success — there's nothing to end.
   Future<void> endWork() async {
     await _sub?.cancel();
     _sub = null;
     _lastSentAt = null;
-    if (_activeSessionId != null) {
+    try {
       await ApiService.instance.post('/rep/work/end', {});
+    } on ApiException catch (e) {
+      if (e.status != 404) rethrow; // 404 = no open session; already ended
     }
     _activeSessionId = null;
   }
