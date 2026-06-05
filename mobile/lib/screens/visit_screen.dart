@@ -8,7 +8,7 @@ import '../widgets/map_preview.dart';
 
 /// Camera-based client-visit flow:
 ///   pick client -> Start Visit (one-time code) -> CAMERA capture (no gallery)
-///   -> stamp overlay -> submit -> server re-verifies (code + geofence + mock GPS).
+///   -> stamp overlay -> submit -> server re-verifies (one-time code + geofence).
 class VisitScreen extends StatefulWidget {
   const VisitScreen({super.key});
   @override
@@ -94,14 +94,12 @@ class _VisitScreenState extends State<VisitScreen> {
         lng: fix.position.longitude,
       );
 
-      // 5. mock-location detection + submit
-      final mock = await VisitService.instance.isMockLocation(fix.position);
+      // 5. submit (mock-GPS detection removed — it false-positived on real phones)
       final result = await VisitService.instance.submitVisit(
         code: code,
         stampedPath: stamped,
         lat: fix.position.latitude,
         lng: fix.position.longitude,
-        mockLocation: mock,
       );
       setState(() => _status = result.status);
     } catch (e) {
@@ -157,8 +155,8 @@ class _VisitScreenState extends State<VisitScreen> {
             Text(
               'The photo is captured live (camera only — no gallery). Your live GPS '
               'is read at the moment of capture and, with a one-time code and server '
-              'timestamp, burned into the image. The server re-checks the code, '
-              'geofence and mock-GPS before accepting.',
+              'timestamp, burned into the image. The server re-checks the code and '
+              'geofence before accepting.',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
             ),
           ],
@@ -173,10 +171,6 @@ class _VisitScreenState extends State<VisitScreen> {
       final d = (e.body as Map)['error'];
       final details = d is Map ? d['details'] : null;
       if (details is Map) {
-        if (details['mockLocation'] == true) {
-          return 'Visit rejected: your phone reported a mock/fake GPS location. '
-              'Turn off any “mock location” / developer GPS apps and use real GPS.';
-        }
         if (details['codeValid'] == false) {
           final reason = details['codeReason'];
           if (reason == 'expired') {

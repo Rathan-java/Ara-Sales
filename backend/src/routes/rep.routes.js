@@ -9,6 +9,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const db = require('../db/knex');
 const config = require('../config');
 const dashboard = require('../services/dashboard.service');
+const products = require('../services/products.service');
 const { storage } = require('../storage');
 const { compressImage } = require('../services/image.service');
 const { nowUtc, toMysqlDateTime } = require('../utils/time');
@@ -49,11 +50,22 @@ router.get('/analytics', validate({ query: repAnalyticsSchema }), asyncHandler(a
   res.json(data);
 }));
 
+// ============ Products list (for the sales form dropdown) ============
+router.get('/products', asyncHandler(async (req, res) => {
+  res.json({
+    products: await products.listProducts(),
+    leadModes: products.LEAD_MODES,
+    leadModeLabels: products.LEAD_MODE_LABELS,
+  });
+}));
+
 // ============ Sales entry ============
+// product = a product NAME from the catalogue; lead_mode = how it was sold.
 const saleSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
   clientName: z.string().min(1).max(190),
-  product: z.enum(['schoolmate', 'school_dm', 'general_dm', 'both']),
+  product: z.string().min(1).max(190),
+  leadMode: z.enum(['platform', 'specific_dm', 'general_dm', 'direct_visit']),
   leadType: z.enum(['hot', 'warm', 'cold']),
   amount: z.coerce.number().min(0),
   saleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -61,11 +73,16 @@ const saleSchema = z.object({
 });
 router.post('/sales', validate({ body: saleSchema }), asyncHandler(async (req, res) => {
   const b = req.body;
+  // The product must currently exist in the catalogue.
+  if (!(await products.productExists(b.product))) {
+    throw ApiError.badRequest(`Unknown product: ${b.product}`);
+  }
   const [id] = await db('sales_entries').insert({
     rep_id: req.user.id,
     client_id: b.clientId || null,
     client_name: b.clientName,
     product: b.product,
+    lead_mode: b.leadMode,
     lead_type: b.leadType,
     amount: b.amount.toFixed(2), // fixed precision
     sale_date: b.saleDate,
@@ -199,12 +216,13 @@ router.post('/visits/start', validate({ body: startVisitSchema }), asyncHandler(
 }));
 
 // Step 2: Upload the stamped photo -> server re-verifies everything.
+// Note: mock-/fake-GPS detection was removed — it false-positives on genuine
+// phones and was wrongly alarming HR, so it is no longer checked or recorded.
 const submitVisitSchema = z.object({
   visitId: z.coerce.number().int().positive(),
   visitCode: z.string().min(4).max(12),
   captureLat: z.coerce.number(),
   captureLng: z.coerce.number(),
-  mockLocation: z.coerce.boolean().optional(),
 });
 router.post(
   '/visits/submit',
@@ -220,8 +238,8 @@ router.post(
     const codeCheck = validateVisitCode(visit, req.body.visitCode, nowUtc());
 
     // (b) Geofence vs the client's APPROVED reference only. If the location is
-    // not approved yet (unset/pending), there is nothing to validate against, so
-    // the geofence passes and the rep's capture is proposed for HR approval.
+    // not approved yet, there is nothing to validate against, so the geofence
+    // passes and the rep's capture auto-sets the client location (below).
     const client = await db('clients').where({ id: visit.client_id }).first();
     const hasApprovedLocation = client.location_status === 'approved'
       && client.reference_lat != null && client.reference_lng != null;
@@ -234,33 +252,25 @@ router.post(
       radiusM: client.geofence_radius_m != null ? Number(client.geofence_radius_m) : config.visit.geofenceRadiusM,
     });
 
-    // (c) Mock-location / fake GPS reported by the device.
-    const mockLocation = Boolean(req.body.mockLocation);
-
+    // Status: invalid one-time code -> reject; out of geofence -> flag; else pass.
     const status = decideVisitStatus({
       codeValid: codeCheck.valid,
       geofencePass: geo.pass,
-      mockLocation,
-      rejectOnMock: config.visit.rejectOnMock,
     });
 
-    // Reject only on an invalid one-time code (or mock GPS in strict mode).
-    // A rejected visit does NOT store the photo. Mock GPS by default -> 'flag'
-    // (accepted + stored + surfaced to HR), so genuine reps are never blocked.
+    // Reject only on an invalid one-time code. A rejected visit is NOT stored.
     if (status === 'reject') {
       await db('visits').where({ id: visit.id }).update({
         capture_lat: Number(req.body.captureLat).toFixed(7),
         capture_lng: Number(req.body.captureLng).toFixed(7),
         server_timestamp: toMysqlDateTime(nowUtc()),
         geofence_pass: geo.pass,
-        mock_location_flag: mockLocation,
         status: 'reject',
       });
       throw ApiError.badRequest('Visit rejected', {
         codeValid: codeCheck.valid,
         codeReason: codeCheck.reason,
         geofencePass: geo.pass,
-        mockLocation,
       });
     }
 
@@ -271,15 +281,14 @@ router.post(
       capture_lng: Number(req.body.captureLng).toFixed(7),
       server_timestamp: toMysqlDateTime(nowUtc()),
       geofence_pass: geo.pass,
-      mock_location_flag: mockLocation,
+      mock_location_flag: false,
       status,
     });
 
     // If the client has no APPROVED location yet, the rep's capture becomes the
     // client's permanent location immediately (no HR approval needed). HR can
-    // still change it later by pasting a Google Maps link. Mock-GPS captures are
-    // skipped so a spoofed fix can never silently become the permanent location.
-    if (!hasApprovedLocation && !mockLocation) {
+    // still change it later by pasting a Google Maps link.
+    if (!hasApprovedLocation) {
       await db('clients').where({ id: client.id }).update({
         reference_lat: Number(req.body.captureLat).toFixed(7),
         reference_lng: Number(req.body.captureLng).toFixed(7),

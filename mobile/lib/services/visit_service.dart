@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
-import 'package:geolocator/geolocator.dart';
 import 'api_service.dart';
 
 /// Visit verification flow (client side of the anti-fraud feature).
@@ -27,19 +26,6 @@ class VisitService {
       serverTimestamp: DateTime.parse(res['serverTimestamp'] as String),
       expiresAt: DateTime.parse(res['expiresAt'] as String),
     );
-  }
-
-  /// Detect a mock/fake-GPS location.
-  ///
-  /// We trust ONLY `Position.isMocked` — Android's own per-fix flag that says
-  /// "this exact location came from a mock provider". It is reliable and does
-  /// not false-positive on genuine GPS.
-  ///
-  /// We deliberately do NOT use SafeDevice.isMockLocation here: on many real
-  /// phones it returns true even with real GPS (it reflects device-wide/dev
-  /// settings, not the actual fix), which was wrongly rejecting real visits.
-  Future<bool> isMockLocation(Position pos) async {
-    return pos.isMocked;
   }
 
   /// Web Mercator slippy-tile coords for a lat/lng at zoom z.
@@ -133,7 +119,6 @@ class VisitService {
     required String stampedPath,
     required double lat,
     required double lng,
-    required bool mockLocation,
   }) async {
     final bytes = await File(stampedPath).readAsBytes();
     final res = await ApiService.instance.multipart(
@@ -143,7 +128,6 @@ class VisitService {
         'visitCode': code.code,
         'captureLat': '$lat',
         'captureLng': '$lng',
-        'mockLocation': '$mockLocation',
       },
       fileBytes: bytes,
       fileField: 'photo',

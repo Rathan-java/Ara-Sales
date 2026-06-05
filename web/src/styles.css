@@ -110,6 +110,18 @@ label { font-size: 13px; color: #4b5563; display: block; margin: 8px 0 4px; }
 .modal h3 { margin: 0 0 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
+/* ===== Image popup modal ===== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.modal { position: relative; background: #fff; border-radius: 12px; padding: 16px; max-width: 92vw; max-height: 92vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.modal-close { position: absolute; top: 8px; right: 8px; background: #111827; color: #fff; border: 0; border-radius: 999px; width: 32px; height: 32px; font-size: 16px; cursor: pointer; line-height: 1; }
+.modal-close:hover { background: #374151; }
+.modal-title { margin: 4px 36px 12px 4px; font-size: 16px; }
+.modal-img { display: block; max-width: 80vw; max-height: 70vh; border-radius: 8px; }
+.modal-meta { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #374151; }
+.linklike { background: none; border: 0; color: #2563eb; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+button.danger { background: #dc2626; }
+button.danger:hover { background: #b91c1c; }
+
 /* ===== Mobile menu (hamburger) ===== */
 .hamburger { display: none; position: fixed; top: 12px; left: 12px; z-index: 40; background: #111827; padding: 8px 12px; font-size: 18px; }
 .sidebar-scrim { display: none; }

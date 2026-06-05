@@ -119,29 +119,21 @@ function evaluateGeofence(input) {
 }
 
 /**
- * Decide the final visit status from the individual anti-cheat checks.
+ * Decide the final visit status from the anti-fraud checks.
  *
- * - invalid one-time code                 -> 'reject' (always; the code is ours)
- * - mock-location reported                -> 'flag' by default, or 'reject' if
- *                                            rejectOnMock is true (strict mode)
- * - valid code but out-of-geofence        -> 'flag'
- * - all checks pass                       -> 'pass'
+ * - invalid one-time code            -> 'reject' (the code is server-issued)
+ * - valid code but out-of-geofence   -> 'flag'  (accepted; surfaced to HR)
+ * - all checks pass                  -> 'pass'
  *
- * Mock-GPS is FLAGGED rather than rejected by default: Android's mock flag
- * false-positives on many genuine devices, so we accept the visit but surface
- * it for HR review instead of blocking a real rep in the field. Set
- * VISIT_REJECT_ON_MOCK=true to hard-reject instead.
+ * (Mock-/fake-GPS detection was removed — it false-positived on genuine phones.)
  *
  * @param {object} checks
  * @param {boolean} checks.codeValid
  * @param {boolean} checks.geofencePass
- * @param {boolean} checks.mockLocation
- * @param {boolean} [checks.rejectOnMock]
  * @returns {'pass'|'flag'|'reject'}
  */
 function decideVisitStatus(checks) {
   if (!checks.codeValid) return 'reject';
-  if (checks.mockLocation) return checks.rejectOnMock ? 'reject' : 'flag';
   if (!checks.geofencePass) return 'flag';
   return 'pass';
 }

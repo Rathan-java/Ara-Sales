@@ -21,6 +21,7 @@ async function achievementFor(repId, month) {
   let achievedPaise = 0;
   const clientKeys = new Set();
   const byProduct = {};
+  const byLeadMode = {};
   const byLeadType = { hot: 0, warm: 0, cold: 0 };
 
   for (const r of rows) {
@@ -28,6 +29,8 @@ async function achievementFor(repId, month) {
     // A "client onboarded" = a distinct client (by id, else by name).
     clientKeys.add(r.client_id != null ? `id:${r.client_id}` : `name:${r.client_name}`);
     byProduct[r.product] = (byProduct[r.product] || 0) + 1;
+    const lm = r.lead_mode || 'platform';
+    byLeadMode[lm] = (byLeadMode[lm] || 0) + 1;
     if (byLeadType[r.lead_type] !== undefined) byLeadType[r.lead_type] += 1;
   }
 
@@ -35,6 +38,7 @@ async function achievementFor(repId, month) {
     achievedAmount: achievedPaise / 100,
     achievedClients: clientKeys.size,
     byProduct,
+    byLeadMode,
     byLeadType,
     salesCount: rows.length,
   };
@@ -89,6 +93,7 @@ async function repMonthSummary(repId, month, { includeSalary, tiers }) {
     clientSurplus: either.clientSurplus,
     revenueSurplus: either.revenueSurplus,
     byProduct: ach.byProduct,
+    byLeadMode: ach.byLeadMode,
     byLeadType: ach.byLeadType,
     salesCount: ach.salesCount,
     // Incentive is shown to reps ONLY when there is a revenue surplus.
@@ -157,15 +162,18 @@ async function analytics(f) {
   const q = db('sales_entries as se').whereRaw("DATE_FORMAT(se.sale_date, '%Y-%m') = ?", [month]);
   if (f.repId) q.andWhere('se.rep_id', f.repId);
   if (f.product) q.andWhere('se.product', f.product);
+  if (f.leadMode) q.andWhere('se.lead_mode', f.leadMode);
   if (f.leadType) q.andWhere('se.lead_type', f.leadType);
 
   const rows = await q.join('users as u', 'u.id', 'se.rep_id')
-    .select('se.amount', 'se.product', 'se.lead_type', 'se.sale_date', 'se.rep_id', 'u.name as rep_name');
+    .select('se.amount', 'se.product', 'se.lead_mode', 'se.lead_type', 'se.sale_date', 'se.rep_id', 'u.name as rep_name');
 
   let totalPaise = 0;
   const byProduct = {};
-  const byLeadType = { hot: 0, warm: 0, cold: 0 };
   const byProductAmt = {};
+  const byLeadMode = {};        // count by lead mode
+  const byLeadModeAmt = {};     // revenue by lead mode (the main pie now)
+  const byLeadType = { hot: 0, warm: 0, cold: 0 };
   const byRep = {};
   const byDay = {};
 
@@ -174,6 +182,9 @@ async function analytics(f) {
     totalPaise += paise;
     byProduct[r.product] = (byProduct[r.product] || 0) + 1;
     byProductAmt[r.product] = (byProductAmt[r.product] || 0) + paise;
+    const lm = r.lead_mode || 'platform';
+    byLeadMode[lm] = (byLeadMode[lm] || 0) + 1;
+    byLeadModeAmt[lm] = (byLeadModeAmt[lm] || 0) + paise;
     if (byLeadType[r.lead_type] !== undefined) byLeadType[r.lead_type] += 1;
     if (!byRep[r.rep_id]) byRep[r.rep_id] = { repId: r.rep_id, name: r.rep_name, amount: 0, count: 0 };
     byRep[r.rep_id].amount += paise;
@@ -183,13 +194,16 @@ async function analytics(f) {
   }
 
   const toRupees = (p) => Math.round(p) / 100;
+  const rupeeMap = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, toRupees(v)]));
   const trend = Object.keys(byDay).sort().map((d) => ({ date: d, amount: toRupees(byDay[d]) }));
 
   return {
     month,
     totals: { revenue: toRupees(totalPaise), salesCount: rows.length },
     byProductCount: byProduct,
-    byProductAmount: Object.fromEntries(Object.entries(byProductAmt).map(([k, v]) => [k, toRupees(v)])),
+    byProductAmount: rupeeMap(byProductAmt),
+    byLeadModeCount: byLeadMode,
+    byLeadModeAmount: rupeeMap(byLeadModeAmt),
     byLeadType,
     byRep: Object.values(byRep)
       .map((r) => ({ ...r, amount: toRupees(r.amount) }))

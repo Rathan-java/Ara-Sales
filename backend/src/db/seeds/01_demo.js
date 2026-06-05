@@ -33,10 +33,15 @@ exports.seed = async function seed(knex) {
   for (const tbl of [
     'export_logs', 'incentives', 'visit_photos', 'visits', 'location_pings',
     'work_sessions', 'sales_entries', 'clients', 'salaries', 'targets', 'users',
+    'products',
   ]) {
-    await knex(tbl).truncate();
+    // eslint-disable-next-line no-await-in-loop
+    if (await knex.schema.hasTable(tbl)) await knex(tbl).truncate();
   }
   await knex.raw('SET FOREIGN_KEY_CHECKS = 1');
+
+  // --- Products catalogue ---
+  await knex('products').insert([{ name: 'SchoolMate' }]);
 
   // --- Users (all share DEFAULT_SEED_PASSWORD; see README) ---
   const [adminId] = await knex('users').insert({
@@ -74,11 +79,11 @@ exports.seed = async function seed(knex) {
 
   // --- Sales entries (Ravi exceeds revenue target -> incentive; Meena below) ---
   await knex('sales_entries').insert([
-    { rep_id: rep1Id, client_id: c1, client_name: 'Greenwood High School', product: 'schoolmate', lead_type: 'hot', amount: '45000.00', sale_date: dayStr(3), notes: 'Bulk order' },
-    { rep_id: rep1Id, client_id: c2, client_name: 'Sunrise Public School', product: 'school_dm', lead_type: 'warm', amount: '40000.00', sale_date: dayStr(7), notes: null },
-    { rep_id: rep1Id, client_id: null, client_name: 'Walk-in enquiry', product: 'general_dm', lead_type: 'cold', amount: '35000.00', sale_date: dayStr(12), notes: 'New lead' },
-    { rep_id: rep2Id, client_id: c3, client_name: 'Blue Bells Academy', product: 'both', lead_type: 'hot', amount: '30000.00', sale_date: dayStr(5), notes: null },
-    { rep_id: rep2Id, client_id: null, client_name: 'Tiny Tots Play School', product: 'schoolmate', lead_type: 'warm', amount: '20000.00', sale_date: dayStr(9), notes: null },
+    { rep_id: rep1Id, client_id: c1, client_name: 'Greenwood High School', product: 'SchoolMate', lead_mode: 'platform', lead_type: 'hot', amount: '45000.00', sale_date: dayStr(3), notes: 'Bulk order' },
+    { rep_id: rep1Id, client_id: c2, client_name: 'Sunrise Public School', product: 'SchoolMate', lead_mode: 'specific_dm', lead_type: 'warm', amount: '40000.00', sale_date: dayStr(7), notes: null },
+    { rep_id: rep1Id, client_id: null, client_name: 'Walk-in enquiry', product: 'SchoolMate', lead_mode: 'general_dm', lead_type: 'cold', amount: '35000.00', sale_date: dayStr(12), notes: 'New lead' },
+    { rep_id: rep2Id, client_id: c3, client_name: 'Blue Bells Academy', product: 'SchoolMate', lead_mode: 'direct_visit', lead_type: 'hot', amount: '30000.00', sale_date: dayStr(5), notes: null },
+    { rep_id: rep2Id, client_id: null, client_name: 'Tiny Tots Play School', product: 'SchoolMate', lead_mode: 'platform', lead_type: 'warm', amount: '20000.00', sale_date: dayStr(9), notes: null },
   ]);
   // Ravi: 120000 achieved vs 100000 target -> 20% surplus -> incentive 4000 (salary 20000)
   // Meena: 50000 achieved vs 80000 target -> no surplus -> no incentive

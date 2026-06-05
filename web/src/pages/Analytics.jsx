@@ -7,8 +7,14 @@ import { api } from '../api/client.js';
 
 const COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
 const LEAD_COLORS = { hot: '#dc2626', warm: '#d97706', cold: '#2563eb' };
-const PRODUCTS = ['schoolmate', 'school_dm', 'general_dm', 'both'];
 const LEADS = ['hot', 'warm', 'cold'];
+const LEAD_MODES = [
+  ['platform', 'Platform'],
+  ['specific_dm', 'Specific Digital Marketing'],
+  ['general_dm', 'General Digital Marketing'],
+  ['direct_visit', 'Direct Visit'],
+];
+const modeLabel = (m) => (LEAD_MODES.find(([k]) => k === m)?.[1] || m);
 
 function Card({ label, value }) {
   return (
@@ -24,12 +30,15 @@ export default function Analytics() {
   const [reps, setReps] = useState([]);
   const [repId, setRepId] = useState('');
   const [product, setProduct] = useState('');
+  const [leadMode, setLeadMode] = useState('');
   const [leadType, setLeadType] = useState('');
+  const [productList, setProductList] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.get('/admin/reps').then((r) => setReps(r.data.reps)).catch(() => {});
+    api.get('/admin/products').then((r) => setProductList(r.data.products || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -37,14 +46,18 @@ export default function Analytics() {
     const params = { month };
     if (repId) params.repId = repId;
     if (product) params.product = product;
+    if (leadMode) params.leadMode = leadMode;
     if (leadType) params.leadType = leadType;
     api.get('/admin/analytics', { params })
       .then((r) => setData(r.data))
       .finally(() => setLoading(false));
-  }, [month, repId, product, leadType]);
+  }, [month, repId, product, leadMode, leadType]);
 
   const productData = data
     ? Object.entries(data.byProductAmount).map(([name, value]) => ({ name, value }))
+    : [];
+  const leadModeData = data
+    ? Object.entries(data.byLeadModeAmount || {}).map(([k, value]) => ({ name: modeLabel(k), value }))
     : [];
   const leadData = data
     ? LEADS.map((k) => ({ name: k, value: data.byLeadType[k] || 0 }))
@@ -64,10 +77,14 @@ export default function Analytics() {
         </select>
         <select value={product} onChange={(e) => setProduct(e.target.value)}>
           <option value="">All products</option>
-          {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+          {productList.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+        </select>
+        <select value={leadMode} onChange={(e) => setLeadMode(e.target.value)}>
+          <option value="">All lead modes</option>
+          {LEAD_MODES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
         </select>
         <select value={leadType} onChange={(e) => setLeadType(e.target.value)}>
-          <option value="">All leads</option>
+          <option value="">All lead types</option>
           {LEADS.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
       </div>
@@ -88,6 +105,19 @@ export default function Analytics() {
                 <PieChart>
                   <Pie data={productData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
                     {productData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v) => `₹ ${Number(v).toLocaleString()}`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="chart-card">
+              <h3>Revenue by Lead Mode</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={leadModeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                    {leadModeData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={(v) => `₹ ${Number(v).toLocaleString()}`} />
                   <Legend />

@@ -78,21 +78,13 @@ test('visit code: expired code rejected', () => {
 });
 
 test('status: all checks pass -> pass', () => {
-  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: true, mockLocation: false }), 'pass');
+  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: true }), 'pass');
 });
 
 test('status: out-of-geofence -> flag', () => {
-  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: false, mockLocation: false }), 'flag');
-});
-
-test('status: mock location -> flag by default (accepted, surfaced to HR)', () => {
-  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: true, mockLocation: true }), 'flag');
-});
-
-test('status: mock location -> reject when rejectOnMock is on (strict mode)', () => {
-  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: true, mockLocation: true, rejectOnMock: true }), 'reject');
+  assert.equal(decideVisitStatus({ codeValid: true, geofencePass: false }), 'flag');
 });
 
 test('status: invalid code -> reject', () => {
-  assert.equal(decideVisitStatus({ codeValid: false, geofencePass: true, mockLocation: false }), 'reject');
+  assert.equal(decideVisitStatus({ codeValid: false, geofencePass: true }), 'reject');
 });

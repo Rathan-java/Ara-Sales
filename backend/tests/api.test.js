@@ -159,17 +159,41 @@ test('API integration', { concurrency: false }, async (t) => {
     const res = await request(app)
       .post('/api/rep/sales')
       .set('Authorization', `Bearer ${repToken}`)
-      .send({ clientName: '', product: 'nope', leadType: 'hot', amount: -5, saleDate: 'bad' });
+      .send({ clientName: '', leadMode: 'nope', leadType: 'hot', amount: -5, saleDate: 'bad' });
     assert.equal(res.status, 400);
   });
 
-  await t.test('rep can add a valid sales entry', async () => {
+  await t.test('rep can add a valid sales entry (product + lead mode + lead type)', async () => {
     const today = new Date().toISOString().slice(0, 10);
     const res = await request(app)
       .post('/api/rep/sales')
       .set('Authorization', `Bearer ${repToken}`)
-      .send({ clientName: 'Test School', product: 'schoolmate', leadType: 'hot', amount: 1000, saleDate: today });
+      .send({ clientName: 'Test School', product: 'SchoolMate', leadMode: 'platform', leadType: 'hot', amount: 1000, saleDate: today });
     assert.equal(res.status, 201);
+  });
+
+  await t.test('sales entry rejects an unknown product', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await request(app)
+      .post('/api/rep/sales')
+      .set('Authorization', `Bearer ${repToken}`)
+      .send({ clientName: 'X', product: 'NoSuchProduct', leadMode: 'platform', leadType: 'hot', amount: 100, saleDate: today });
+    assert.equal(res.status, 400);
+  });
+
+  await t.test('products: add, list, delete; re-add deleted name works; dup blocked', async () => {
+    const add = await request(app).post('/api/admin/products')
+      .set('Authorization', `Bearer ${adminToken}`).send({ name: 'TestProd' });
+    assert.equal(add.status, 201);
+    const dup = await request(app).post('/api/admin/products')
+      .set('Authorization', `Bearer ${adminToken}`).send({ name: 'TestProd' });
+    assert.equal(dup.status, 409); // active dup blocked
+    const del = await request(app).delete(`/api/admin/products/${add.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    assert.equal(del.status, 200);
+    const readd = await request(app).post('/api/admin/products')
+      .set('Authorization', `Bearer ${adminToken}`).send({ name: 'TestProd' });
+    assert.equal(readd.status, 201); // deleted name can be created again
   });
 
   await t.test('visit verification rejects a wrong one-time code', async () => {
@@ -221,8 +245,14 @@ test('API integration', { concurrency: false }, async (t) => {
     assert.ok(c.reference_lat != null, 'reference_lat auto-set from the capture');
   });
 
-  await t.test('mock GPS is FLAGGED (not rejected) and does NOT set the location', async () => {
-    const id = await makeClient('Mock GPS Client');
+  await t.test('out-of-geofence visit is FLAGGED (not rejected) at an approved client', async () => {
+    // Make a fresh client and have HR set an approved location (12.97, 77.59).
+    const id = await makeClient('Geofence Client');
+    const setLoc = await request(app)
+      .put(`/api/admin/clients/${id}/location`).set('Authorization', `Bearer ${adminToken}`)
+      .send({ googleLocation: '12.9716, 77.5946' });
+    assert.equal(setLoc.status, 200);
+
     const start = await request(app)
       .post('/api/rep/visits/start').set('Authorization', `Bearer ${repToken}`)
       .send({ clientId: id });
@@ -230,14 +260,10 @@ test('API integration', { concurrency: false }, async (t) => {
       .post('/api/rep/visits/submit').set('Authorization', `Bearer ${repToken}`)
       .field('visitId', String(start.body.visitId))
       .field('visitCode', start.body.visitCode)
-      .field('captureLat', '11.0001').field('captureLng', '79.0001')
-      .field('mockLocation', 'true')
+      .field('captureLat', '11.0001').field('captureLng', '79.0001') // ~far away
       .attach('photo', Buffer.from('fake-jpeg-bytes'), 'photo.jpg');
     assert.equal(res.status, 200);
-    assert.equal(res.body.status, 'flag'); // accepted, not rejected
-    const c = await getClient(id);
-    assert.equal(c.location_status, 'unset'); // spoofed fix did NOT become the location
-    assert.ok(c.reference_lat == null);
+    assert.equal(res.body.status, 'flag');
   });
 
   await t.test('admin export returns an xlsx stream', async () => {

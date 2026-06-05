@@ -13,22 +13,55 @@ class _SalesEntryScreenState extends State<SalesEntryScreen> {
   final _clientName = TextEditingController();
   final _amount = TextEditingController();
   final _notes = TextEditingController();
-  String _product = 'schoolmate';
+
+  List<String> _products = [];
+  String? _product;
+  String _leadMode = 'platform';
   String _leadType = 'hot';
   DateTime _saleDate = DateTime.now();
   bool _busy = false;
+  bool _loadingProducts = true;
   String? _error;
 
-  static const products = ['schoolmate', 'school_dm', 'general_dm', 'both'];
-  static const leads = ['hot', 'warm', 'cold'];
+  // Lead mode: how the sale was made (value -> label).
+  static const leadModes = [
+    ['platform', 'Platform'],
+    ['specific_dm', 'Specific Digital Marketing'],
+    ['general_dm', 'General Digital Marketing'],
+    ['direct_visit', 'Direct Visit'],
+  ];
+  static const leadTypes = ['hot', 'warm', 'cold'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final res = await ApiService.instance.get('/rep/products');
+      final list = (res['products'] as List).map((p) => p['name'] as String).toList();
+      setState(() {
+        _products = list;
+        if (list.isNotEmpty) _product = list.first;
+      });
+    } catch (e) {
+      setState(() => _error = 'Could not load products: $e');
+    } finally {
+      setState(() => _loadingProducts = false);
+    }
+  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_product == null) { setState(() => _error = 'Please select a product'); return; }
     setState(() { _busy = true; _error = null; });
     try {
       await ApiService.instance.post('/rep/sales', {
         'clientName': _clientName.text.trim(),
         'product': _product,
+        'leadMode': _leadMode,
         'leadType': _leadType,
         'amount': double.parse(_amount.text.trim()),
         'saleDate': DateFormat('yyyy-MM-dd').format(_saleDate),
@@ -37,9 +70,9 @@ class _SalesEntryScreenState extends State<SalesEntryScreen> {
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -58,17 +91,30 @@ class _SalesEntryScreenState extends State<SalesEntryScreen> {
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 12),
+            // Product (from the catalogue)
+            _loadingProducts
+                ? const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator())
+                : DropdownButtonFormField<String>(
+                    initialValue: _product,
+                    decoration: const InputDecoration(labelText: 'Product', border: OutlineInputBorder()),
+                    items: _products.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                    onChanged: (v) => setState(() => _product = v),
+                    validator: (v) => v == null ? 'Select a product' : null,
+                  ),
+            const SizedBox(height: 12),
+            // Lead mode
             DropdownButtonFormField<String>(
-              initialValue: _product,
-              decoration: const InputDecoration(labelText: 'Product', border: OutlineInputBorder()),
-              items: products.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-              onChanged: (v) => setState(() => _product = v!),
+              initialValue: _leadMode,
+              decoration: const InputDecoration(labelText: 'Lead mode', border: OutlineInputBorder()),
+              items: leadModes.map((m) => DropdownMenuItem(value: m[0], child: Text(m[1]))).toList(),
+              onChanged: (v) => setState(() => _leadMode = v!),
             ),
             const SizedBox(height: 12),
+            // Lead type
             DropdownButtonFormField<String>(
               initialValue: _leadType,
               decoration: const InputDecoration(labelText: 'Lead type', border: OutlineInputBorder()),
-              items: leads.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+              items: leadTypes.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
               onChanged: (v) => setState(() => _leadType = v!),
             ),
             const SizedBox(height: 12),

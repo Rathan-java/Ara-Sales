@@ -338,11 +338,43 @@ router.delete('/clients/:id', validate({ params: clientIdParam }), asyncHandler(
   res.json({ ok: true });
 }));
 
-// --- Analytics for charts (filters: month, repId, product, leadType) ---
+// --- Products management (admin): list / add / delete ---
+const products = require('../services/products.service');
+
+router.get('/products', asyncHandler(async (req, res) => {
+  res.json({
+    products: await products.listProducts(),
+    leadModes: products.LEAD_MODES,
+    leadModeLabels: products.LEAD_MODE_LABELS,
+  });
+}));
+
+const productCreateSchema = z.object({ name: z.string().min(1).max(190) });
+router.post('/products', validate({ body: productCreateSchema }), asyncHandler(async (req, res) => {
+  const created = await products.createProduct(req.body.name);
+  await db('audit_logs').insert({
+    actor_id: req.user.id, actor_email: req.user.email, action: 'product.create',
+    target_type: 'product', target_id: String(created.id), detail: created.name,
+  }).catch(() => {});
+  res.status(201).json({ ok: true, ...created });
+}));
+
+const productIdParam = z.object({ id: z.coerce.number().int().positive() });
+router.delete('/products/:id', validate({ params: productIdParam }), asyncHandler(async (req, res) => {
+  const r = await products.deleteProduct(req.params.id);
+  await db('audit_logs').insert({
+    actor_id: req.user.id, actor_email: req.user.email, action: 'product.delete',
+    target_type: 'product', target_id: String(req.params.id), detail: r.deleted,
+  }).catch(() => {});
+  res.json(r);
+}));
+
+// --- Analytics for charts (filters: month, repId, product, leadMode, leadType) ---
 const analyticsSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   repId: z.coerce.number().int().positive().optional(),
-  product: z.enum(['schoolmate', 'school_dm', 'general_dm', 'both']).optional(),
+  product: z.string().max(190).optional(),
+  leadMode: z.enum(['platform', 'specific_dm', 'general_dm', 'direct_visit']).optional(),
   leadType: z.enum(['hot', 'warm', 'cold']).optional(),
 });
 router.get('/analytics', validate({ query: analyticsSchema }), asyncHandler(async (req, res) => {
@@ -350,6 +382,7 @@ router.get('/analytics', validate({ query: analyticsSchema }), asyncHandler(asyn
     month: req.query.month || dashboard.currentMonth(),
     repId: req.query.repId,
     product: req.query.product,
+    leadMode: req.query.leadMode,
     leadType: req.query.leadType,
   });
   res.json(data);
@@ -392,11 +425,12 @@ router.post('/salaries', validate({ body: salarySchema }), asyncHandler(async (r
   res.json({ ok: true });
 }));
 
-// --- Sales entries with product + lead-type filters ---
+// --- Sales entries with product + lead-mode + lead-type filters ---
 const salesFilterSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
   repId: z.coerce.number().int().positive().optional(),
-  product: z.enum(['schoolmate', 'school_dm', 'general_dm', 'both']).optional(),
+  product: z.string().max(190).optional(),
+  leadMode: z.enum(['platform', 'specific_dm', 'general_dm', 'direct_visit']).optional(),
   leadType: z.enum(['hot', 'warm', 'cold']).optional(),
 });
 router.get('/sales', validate({ query: salesFilterSchema }), asyncHandler(async (req, res) => {
@@ -408,6 +442,7 @@ router.get('/sales', validate({ query: salesFilterSchema }), asyncHandler(async 
     .orderBy('se.sale_date', 'desc');
   if (req.query.repId) q.andWhere('se.rep_id', req.query.repId);
   if (req.query.product) q.andWhere('se.product', req.query.product);
+  if (req.query.leadMode) q.andWhere('se.lead_mode', req.query.leadMode);
   if (req.query.leadType) q.andWhere('se.lead_type', req.query.leadType);
   const sales = await q;
   res.json({ month, sales });
@@ -505,6 +540,26 @@ router.get('/visits', validate({ query: visitsFilterSchema }), asyncHandler(asyn
     v.photos = photos.map((p) => ({ ...p, url: storage.publicUrl(p.file_path) }));
   }
   res.json({ visits });
+}));
+
+// --- Delete visit photos (HR removes images from the DB + storage) ---
+// Accepts a list of visit_photo ids. Removes the underlying file via the storage
+// interface, then the DB row. The visit record itself is kept.
+const deletePhotosSchema = z.object({
+  ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+});
+router.post('/visit-photos/delete', validate({ body: deletePhotosSchema }), asyncHandler(async (req, res) => {
+  const rows = await db('visit_photos').whereIn('id', req.body.ids).select('id', 'file_path');
+  let filesRemoved = 0;
+  for (const row of rows) {
+    try { await storage.remove(row.file_path); filesRemoved += 1; } catch { /* ignore missing file */ }
+  }
+  const deleted = await db('visit_photos').whereIn('id', req.body.ids).del();
+  await db('audit_logs').insert({
+    actor_id: req.user.id, actor_email: req.user.email, action: 'visit_photo.delete',
+    target_type: 'visit_photo', target_id: req.body.ids.join(','), detail: `${deleted} deleted`,
+  }).catch(() => {});
+  res.json({ ok: true, deleted, filesRemoved });
 }));
 
 // --- Photo retention: purge photos older than the retention window (on demand) ---

@@ -25,11 +25,18 @@ async function buildWorkbook(month) {
 
   // --- Sheet 1: Sales Entries ---
   const s1 = wb.addWorksheet('Sales Entries');
+  const LEAD_MODE_LABELS = {
+    platform: 'Platform',
+    specific_dm: 'Specific Digital Marketing',
+    general_dm: 'General Digital Marketing',
+    direct_visit: 'Direct Visit',
+  };
   s1.columns = [
     { header: 'ID', key: 'id', width: 8 },
     { header: 'Rep', key: 'rep', width: 18 },
     { header: 'Client', key: 'client_name', width: 24 },
-    { header: 'Product', key: 'product', width: 14 },
+    { header: 'Product', key: 'product', width: 16 },
+    { header: 'Lead Mode', key: 'lead_mode', width: 24 },
     { header: 'Lead Type', key: 'lead_type', width: 12 },
     { header: 'Amount (₹)', key: 'amount', width: 14 },
     { header: 'Sale Date', key: 'sale_date', width: 14 },
@@ -38,9 +45,13 @@ async function buildWorkbook(month) {
   const sales = await db('sales_entries as se')
     .join('users as u', 'u.id', 'se.rep_id')
     .whereRaw("DATE_FORMAT(se.sale_date, '%Y-%m') = ?", [month])
-    .select('se.id', 'u.name as rep', 'se.client_name', 'se.product', 'se.lead_type', 'se.amount', 'se.sale_date', 'se.notes')
+    .select('se.id', 'u.name as rep', 'se.client_name', 'se.product', 'se.lead_mode', 'se.lead_type', 'se.amount', 'se.sale_date', 'se.notes')
     .orderBy('se.sale_date');
-  sales.forEach((r) => s1.addRow({ ...r, amount: money(r.amount) }));
+  sales.forEach((r) => s1.addRow({
+    ...r,
+    lead_mode: LEAD_MODE_LABELS[r.lead_mode] || r.lead_mode || '',
+    amount: money(r.amount),
+  }));
 
   // --- Sheet 2: Target vs Achievement ---
   const s2 = wb.addWorksheet('Target vs Achievement');
@@ -88,7 +99,6 @@ async function buildWorkbook(month) {
     { header: 'Lat', key: 'capture_lat', width: 14 },
     { header: 'Lng', key: 'capture_lng', width: 14 },
     { header: 'Geofence', key: 'geofence', width: 12 },
-    { header: 'Mock GPS', key: 'mock', width: 10 },
     { header: 'Status', key: 'status', width: 10 },
     { header: 'Photo Link', key: 'photo', width: 50 },
   ];
@@ -99,7 +109,7 @@ async function buildWorkbook(month) {
     .whereRaw("DATE_FORMAT(v.created_at, '%Y-%m') = ?", [month])
     .select(
       'v.id', 'u.name as rep', 'c.name as client', 'v.server_timestamp',
-      'v.capture_lat', 'v.capture_lng', 'v.geofence_pass', 'v.mock_location_flag',
+      'v.capture_lat', 'v.capture_lng', 'v.geofence_pass',
       'v.status', 'p.file_path',
     )
     .orderBy('v.created_at');
@@ -111,7 +121,6 @@ async function buildWorkbook(month) {
     capture_lat: v.capture_lat,
     capture_lng: v.capture_lng,
     geofence: v.geofence_pass ? 'PASS' : 'FAIL',
-    mock: v.mock_location_flag ? 'YES' : 'no',
     status: (v.status || '').toUpperCase(),
     photo: v.file_path ? storage.publicUrl(v.file_path) : '',
   }));
