@@ -12,6 +12,8 @@ import Users from './pages/Users.jsx';
 import IncentiveSettings from './pages/IncentiveSettings.jsx';
 import Clients from './pages/Clients.jsx';
 import Products from './pages/Products.jsx';
+import TravelDistance from './pages/TravelDistance.jsx';
+import Allowance from './pages/Allowance.jsx';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -29,11 +31,13 @@ function Shell({ children }) {
     ['/analytics', 'Analytics'],
     ['/sales', 'Sales'],
     ['/movement', 'Movement'],
+    ['/distance', 'Travel Distance'],
     ['/visits', 'Visits'],
     ['/clients', 'Clients'],
     ['/products', 'Products'],
     ['/setup', 'Targets'],
     ['/incentives', 'Incentive Settings'],
+    ['/allowance', 'Travel Allowance'],
     ['/users', 'User Management'],
   ];
   return (
@@ -71,6 +75,8 @@ export default function App() {
       <Route path="/incentives" element={<RequireAuth><Shell><IncentiveSettings /></Shell></RequireAuth>} />
       <Route path="/clients" element={<RequireAuth><Shell><Clients /></Shell></RequireAuth>} />
       <Route path="/products" element={<RequireAuth><Shell><Products /></Shell></RequireAuth>} />
+      <Route path="/distance" element={<RequireAuth><Shell><TravelDistance /></Shell></RequireAuth>} />
+      <Route path="/allowance" element={<RequireAuth><Shell><Allowance /></Shell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -148,8 +148,25 @@ async function buildWorkbook(month) {
     s5.addRow({ id: ws.id, rep: ws.rep, started_at: ws.started_at, ended_at: ws.ended_at, pings: Number(cnt.c), duration });
   }
 
+  // --- Sheet 6: Travel Distance (KM per rep per day) ---
+  const s6 = wb.addWorksheet('Travel Distance');
+  s6.columns = [
+    { header: 'Rep', key: 'rep', width: 18 },
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Distance (km)', key: 'km', width: 16 },
+    { header: 'Allowance (₹)', key: 'allowance', width: 16 },
+  ];
+  // eslint-disable-next-line global-require
+  const distance = require('./distance.service');
+  const rateRow = await db('app_settings').where({ key: 'allowance_per_km' }).first();
+  const rate = rateRow ? Number(rateRow.value) || 0 : 0;
+  const distRows = await distance.allRepsDailyDistance(month);
+  distRows.forEach((r) => s6.addRow({
+    rep: r.rep, date: r.date, km: r.km, allowance: Math.round(r.km * rate * 100) / 100,
+  }));
+
   // Bold headers on every sheet.
-  [s1, s2, s3, s4, s5].forEach((ws) => { ws.getRow(1).font = { bold: true }; });
+  [s1, s2, s3, s4, s5, s6].forEach((ws) => { ws.getRow(1).font = { bold: true }; });
 
   return wb;
 }

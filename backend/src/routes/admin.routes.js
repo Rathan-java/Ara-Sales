@@ -507,6 +507,45 @@ router.get(
   }),
 );
 
+// --- Daily travel distance (KM) for a rep in a month ---
+const distance = require('../services/distance.service');
+router.get(
+  '/distance/:repId',
+  validate({ params: movementParams, query: monthSchema }),
+  asyncHandler(async (req, res) => {
+    const month = req.query.month || dashboard.currentMonth();
+    const { totalKm, days } = await distance.monthlyDistanceForRep(req.params.repId, month);
+    const rate = await getAllowancePerKm();
+    res.json({
+      month,
+      totalKm,
+      allowancePerKm: rate,
+      totalAllowance: Math.round(totalKm * rate * 100) / 100,
+      days: days.map((d) => ({ ...d, allowance: Math.round(d.km * rate * 100) / 100 })),
+    });
+  }),
+);
+
+// --- Allowance rate (₹/km) — get & set ---
+async function getAllowancePerKm() {
+  const row = await db('app_settings').where({ key: 'allowance_per_km' }).first();
+  return row ? Number(row.value) || 0 : 0;
+}
+router.get('/allowance', asyncHandler(async (req, res) => {
+  res.json({ allowancePerKm: await getAllowancePerKm() });
+}));
+const allowanceSchema = z.object({ allowancePerKm: z.coerce.number().min(0).max(1000) });
+router.put('/allowance', validate({ body: allowanceSchema }), asyncHandler(async (req, res) => {
+  const value = String(req.body.allowancePerKm);
+  const existing = await db('app_settings').where({ key: 'allowance_per_km' }).first();
+  if (existing) {
+    await db('app_settings').where({ key: 'allowance_per_km' }).update({ value, updated_at: db.fn.now() });
+  } else {
+    await db('app_settings').insert({ key: 'allowance_per_km', value });
+  }
+  res.json({ ok: true, allowancePerKm: Number(value) });
+}));
+
 // --- Live: latest ping per active rep ---
 router.get('/live', asyncHandler(async (req, res) => {
   const active = await db('work_sessions').whereNull('ended_at');
