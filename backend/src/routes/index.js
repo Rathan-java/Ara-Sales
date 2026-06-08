@@ -16,8 +16,13 @@ router.get('/health', (req, res) => res.json({ ok: true, service: 'ara-sales-api
 // by <img src> so this must be unauthenticated (the key is an opaque path).
 // Only active when the driver implements fetch() (i.e. STORAGE_DRIVER=mysql).
 if (typeof storage.fetch === 'function') {
-  router.get('/photos/:key', asyncHandler(async (req, res) => {
-    const found = await storage.fetch(req.params.key);
+  // Use a wildcard (0+) so the key can contain slashes, e.g.
+  // "visits/4/visit_17.jpg". A plain :key param only matches one path segment
+  // (up to the next "/"), which 404'd multi-segment photo keys.
+  router.get('/photos/*', asyncHandler(async (req, res) => {
+    // Everything after "/photos/" is the storage key (already URL-decoded).
+    const key = req.params[0];
+    const found = await storage.fetch(key);
     if (!found) throw ApiError.notFound('Photo not found');
     res.setHeader('Content-Type', found.contentType || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
