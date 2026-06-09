@@ -13,15 +13,27 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  static const products = ['schoolmate', 'school_dm', 'general_dm', 'both'];
   static const leads = ['hot', 'warm', 'cold'];
+  // Lead mode value -> label (matches the backend + web).
+  static const leadModes = [
+    ['platform', 'Platform'],
+    ['specific_dm', 'Specific Digital Marketing'],
+    ['general_dm', 'General Digital Marketing'],
+    ['direct_visit', 'Direct Visit'],
+  ];
+  static String leadModeLabel(String? v) {
+    for (final m in leadModes) { if (m[0] == v) return m[1]; }
+    return v ?? '';
+  }
   static const palette = [
     Color(0xFF2563EB), Color(0xFF16A34A), Color(0xFFD97706),
     Color(0xFFDC2626), Color(0xFF7C3AED), Color(0xFF0891B2),
   ];
 
   DateTime _month = DateTime.now();
+  List<String> _products = []; // live catalogue from the backend
   String? _product;
+  String? _leadMode;
   String? _leadType;
   Map<String, dynamic>? _data;
   bool _loading = true;
@@ -30,7 +42,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   void initState() {
     super.initState();
+    _loadProducts();
     _load();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final res = await ApiService.instance.get('/rep/products');
+      final list = (res['products'] as List).map((p) => p['name'] as String).toList();
+      if (mounted) setState(() => _products = list);
+    } catch (_) {/* filter still works without the list */}
   }
 
   Future<void> _load() async {
@@ -38,6 +59,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     try {
       final q = <String, dynamic>{'month': DateFormat('yyyy-MM').format(_month)};
       if (_product != null) q['product'] = _product;
+      if (_leadMode != null) q['leadMode'] = _leadMode;
       if (_leadType != null) q['leadType'] = _leadType;
       final res = await ApiService.instance.get('/rep/analytics', query: q);
       setState(() => _data = res as Map<String, dynamic>);
@@ -67,8 +89,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       const SizedBox(height: 12),
                       _totals(),
                       const SizedBox(height: 16),
-                      _sectionTitle('Revenue by Product'),
-                      _productPie(),
+                      _sectionTitle('Revenue by Lead Mode'),
+                      _leadModePie(),
                       const SizedBox(height: 16),
                       _sectionTitle('Leads by Type'),
                       _leadBar(),
@@ -105,19 +127,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             if (picked != null) { setState(() => _month = picked); _load(); }
           },
         ),
-        _dropdown('Product', _product, products, (v) { setState(() => _product = v); _load(); }),
-        _dropdown('Lead', _leadType, leads, (v) { setState(() => _leadType = v); _load(); }),
+        // Product filter from the LIVE catalogue.
+        _dropdown('All products', _product,
+            _products.map((p) => [p, p]).toList(),
+            (v) { setState(() => _product = v); _load(); }),
+        // Lead mode filter (value/label pairs).
+        _dropdown('All lead modes', _leadMode, leadModes,
+            (v) { setState(() => _leadMode = v); _load(); }),
+        // Lead type filter.
+        _dropdown('All lead types', _leadType, leads.map((l) => [l, l]).toList(),
+            (v) { setState(() => _leadType = v); _load(); }),
       ],
     );
   }
 
-  Widget _dropdown(String hint, String? value, List<String> opts, ValueChanged<String?> onCh) {
+  // opts = list of [value, label] pairs; null = "All".
+  Widget _dropdown(String allLabel, String? value, List<List<String>> opts, ValueChanged<String?> onCh) {
     return DropdownButton<String?>(
       value: value,
-      hint: Text('All ${hint.toLowerCase()}s'),
+      hint: Text(allLabel),
       items: [
-        DropdownMenuItem<String?>(value: null, child: Text('All ${hint.toLowerCase()}s')),
-        ...opts.map((o) => DropdownMenuItem<String?>(value: o, child: Text(o))),
+        DropdownMenuItem<String?>(value: null, child: Text(allLabel)),
+        ...opts.map((o) => DropdownMenuItem<String?>(value: o[0], child: Text(o[1]))),
       ],
       onChanged: onCh,
     );
@@ -146,8 +177,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       );
 
-  Widget _productPie() {
-    final m = (_data?['byProductAmount'] as Map?) ?? {};
+  Widget _leadModePie() {
+    final m = (_data?['byLeadModeAmount'] as Map?) ?? {};
     final entries = m.entries.where((e) => (e.value ?? 0) > 0).toList();
     if (entries.isEmpty) return _empty();
     final sections = <PieChartSectionData>[];
@@ -165,7 +196,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 6, children: [
             for (var i = 0; i < entries.length; i++)
-              _legend(palette[i % palette.length], '${entries[i].key}: ₹${_fmt(entries[i].value)}'),
+              _legend(palette[i % palette.length],
+                  '${leadModeLabel(entries[i].key as String)}: ₹${_fmt(entries[i].value)}'),
           ]),
         ]),
       ),
