@@ -10,17 +10,18 @@ class SalesEntryScreen extends StatefulWidget {
 
 class _SalesEntryScreenState extends State<SalesEntryScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _clientName = TextEditingController();
   final _amount = TextEditingController();
   final _notes = TextEditingController();
 
+  List<Map<String, dynamic>> _clients = [];
+  int? _clientId;
   List<String> _products = [];
   String? _product;
   String _leadMode = 'platform';
   String _leadType = 'hot';
   DateTime _saleDate = DateTime.now();
   bool _busy = false;
-  bool _loadingProducts = true;
+  bool _loading = true;
   String? _error;
 
   // Lead mode: how the sale was made (value -> label).
@@ -35,31 +36,38 @@ class _SalesEntryScreenState extends State<SalesEntryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _load();
   }
 
-  Future<void> _loadProducts() async {
+  Future<void> _load() async {
     try {
-      final res = await ApiService.instance.get('/rep/products');
-      final list = (res['products'] as List).map((p) => p['name'] as String).toList();
+      final prodRes = await ApiService.instance.get('/rep/products');
+      final products = (prodRes['products'] as List).map((p) => p['name'] as String).toList();
+      final cliRes = await ApiService.instance.get('/rep/clients');
+      final clients = (cliRes['clients'] as List).cast<Map<String, dynamic>>();
       setState(() {
-        _products = list;
-        if (list.isNotEmpty) _product = list.first;
+        _products = products;
+        if (products.isNotEmpty) _product = products.first;
+        _clients = clients;
+        if (clients.isNotEmpty) _clientId = clients.first['id'] as int;
       });
     } catch (e) {
-      setState(() => _error = 'Could not load products: $e');
+      setState(() => _error = 'Could not load data: $e');
     } finally {
-      setState(() => _loadingProducts = false);
+      setState(() => _loading = false);
     }
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_product == null) { setState(() => _error = 'Please select a product'); return; }
+    if (_clientId == null) { setState(() => _error = 'Please select a client'); return; }
     setState(() { _busy = true; _error = null; });
     try {
+      final client = _clients.firstWhere((c) => c['id'] == _clientId);
       await ApiService.instance.post('/rep/sales', {
-        'clientName': _clientName.text.trim(),
+        'clientId': _clientId,
+        'clientName': client['name'],
         'product': _product,
         'leadMode': _leadMode,
         'leadType': _leadType,
@@ -80,27 +88,48 @@ class _SalesEntryScreenState extends State<SalesEntryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Add Sale')),
-      body: Form(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextFormField(
-              controller: _clientName,
-              decoration: const InputDecoration(labelText: 'Client name', border: OutlineInputBorder()),
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
+            // Client (from the existing clients list — no free typing)
+            _clients.isEmpty
+                ? Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.orange),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'No clients yet. Add a client first from the Clients screen, '
+                      'then book the sale.',
+                    ),
+                  )
+                : DropdownButtonFormField<int>(
+                    initialValue: _clientId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Client', border: OutlineInputBorder()),
+                    items: _clients
+                        .map((c) => DropdownMenuItem<int>(
+                              value: c['id'] as int,
+                              child: Text(c['name'] as String, overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _clientId = v),
+                    validator: (v) => v == null ? 'Select a client' : null,
+                  ),
             const SizedBox(height: 12),
             // Product (from the catalogue)
-            _loadingProducts
-                ? const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator())
-                : DropdownButtonFormField<String>(
-                    initialValue: _product,
-                    decoration: const InputDecoration(labelText: 'Product', border: OutlineInputBorder()),
-                    items: _products.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                    onChanged: (v) => setState(() => _product = v),
-                    validator: (v) => v == null ? 'Select a product' : null,
-                  ),
+            DropdownButtonFormField<String>(
+              initialValue: _product,
+              decoration: const InputDecoration(labelText: 'Product', border: OutlineInputBorder()),
+              items: _products.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+              onChanged: (v) => setState(() => _product = v),
+              validator: (v) => v == null ? 'Select a product' : null,
+            ),
             const SizedBox(height: 12),
             // Lead mode
             DropdownButtonFormField<String>(
